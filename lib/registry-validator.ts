@@ -4,9 +4,10 @@
  * Requirements:
  * 1. Validates that every model entry has authoritative source links.
  * 2. Validates exact bytes (> 0), valid quantization, non-empty tags, and valid licenses.
- * 3. Freshness check: flags records verified older than maxAgeDays (default: 30 days, as 90 days is too long).
+ * 3. Freshness check: flags records verified older than maxAgeDays (default: 30 days).
  * 4. Ensures official memory fields have required source URLs.
  * 5. Audits unverified fields so developers can identify knowledge gaps.
+ * 6. Audits source-discrepancy flags.
  */
 
 import { ModelEntry } from "./types";
@@ -33,6 +34,7 @@ export interface RegistryValidationReport {
   legacyCount: number;
   retiredCount: number;
   verifiedCount: number;
+  discrepancyCount: number;
   staleCount: number;
   issues: ValidationIssue[];
   unverifiedFields: UnverifiedFieldRecord[];
@@ -47,7 +49,7 @@ export function validateModelRegistry(
     maxAgeDays?: number;
   }
 ): RegistryValidationReport {
-  const asOf = options?.asOfDate ?? new Date("2026-10-02T12:00:00.000Z");
+  const asOf = options?.asOfDate ?? new Date("2026-10-02T13:00:00.000Z");
   const maxAgeDays = options?.maxAgeDays ?? 30; // 30-day freshness window for rapid ecosystem
   const issues: ValidationIssue[] = [];
   const unverifiedFields: UnverifiedFieldRecord[] = [];
@@ -56,6 +58,7 @@ export function validateModelRegistry(
   let legacyCount = 0;
   let retiredCount = 0;
   let verifiedCount = 0;
+  let discrepancyCount = 0;
   let staleCount = 0;
 
   for (const model of models) {
@@ -64,6 +67,7 @@ export function validateModelRegistry(
     else if (model.lifecycle === "retired") retiredCount++;
 
     if (model.verificationStatus === "verified") verifiedCount++;
+    else if (model.verificationStatus === "source-discrepancy") discrepancyCount++;
     else if (model.verificationStatus === "metadata-stale") staleCount++;
 
     // 1. Mandatory exact identification
@@ -137,7 +141,7 @@ export function validateModelRegistry(
         modelId: model.id,
         ollamaTag: model.ollamaTag,
         field: "officialSystemMemoryGuidance",
-        reason: "No vendor system RAM specification published; falling back to labeled heuristic.",
+        reason: "No vendor system RAM specification published; stored as null, not guessed.",
       });
     }
 
@@ -155,7 +159,7 @@ export function validateModelRegistry(
         modelId: model.id,
         ollamaTag: model.ollamaTag,
         field: "officialInferenceMemory",
-        reason: "No vendor inference VRAM benchmark published.",
+        reason: "No vendor inference VRAM benchmark published; stored as null, not guessed.",
       });
     }
 
@@ -194,6 +198,7 @@ export function validateModelRegistry(
     legacyCount,
     retiredCount,
     verifiedCount,
+    discrepancyCount,
     staleCount,
     issues,
     unverifiedFields,

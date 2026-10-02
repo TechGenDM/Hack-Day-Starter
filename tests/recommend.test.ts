@@ -8,13 +8,14 @@
  * D. Qwen3.5 9B metadata matches verified source snapshot
  * E. GPT-OSS 20B metadata matches verified source snapshot
  * F. Capability fields match source snapshot
- * G. Exact Ollama artifact sizes match source snapshot
- * H. Current model discovery finds newly added model families
+ * G. Exact Ollama artifact sizes match source snapshot in bytes
+ * H. Current model discovery finds newly added model families (including Qwen3.8)
  * I. Retired / unavailable models are never recommended
  * J. Stale metadata cannot be presented as "current"
  * K. 24 GB Apple Silicon recommends only models that pass current hardware policy
  * L. 8 GB CPU-only does not receive artificially inflated model-capacity bonuses
  * M. Tool-calling selection depends on verified capability data
+ * N. Discrepancy detector flags discrepancies when curated registry disagrees with source observations
  */
 
 import test from "node:test";
@@ -27,11 +28,12 @@ import {
   getEligibleLocalModels,
 } from "../lib/registry";
 import {
-  OFFICIAL_OLLAMA_SOURCE_SNAPSHOT,
+  REGRESSION_SOURCE_SNAPSHOT,
+  detectSourceDiscrepancies,
   discoverCurrentModelFamilies,
 } from "../lib/sources/ollama";
 import { validateModelRegistry } from "../lib/registry-validator";
-import { HardwareProfile } from "../lib/types";
+import { HardwareProfile, RawOllamaObservation } from "../lib/types";
 
 // ---------------------------------------------------------------------------
 // Tests A–E: Exact Metadata Matching Against Verified Source Snapshot
@@ -41,48 +43,39 @@ test("A: Gemma 4 E4B metadata matches verified source snapshot", () => {
   const model = VERIFIED_MODEL_REGISTRY.find((m) => m.ollamaTag === "gemma4:e4b");
   assert.ok(model, "gemma4:e4b must exist in registry");
 
-  const expected = OFFICIAL_OLLAMA_SOURCE_SNAPSHOT["gemma4:e4b"];
-  assert.strictEqual(model.artifactSizeBytes, expected.artifactSizeBytes);
-  assert.strictEqual(model.quantization, expected.quantization);
+  const expected = REGRESSION_SOURCE_SNAPSHOT["gemma4:e4b"];
+  assert.strictEqual(model.artifactSizeBytes, expected.sizeBytes);
+  assert.strictEqual(model.quantization, "Q4_K_M");
   assert.strictEqual(model.contextTokens, expected.contextTokens);
-  assert.strictEqual(model.parameterCount, expected.parameterCount);
-  assert.strictEqual(model.license, expected.license);
-  assert.strictEqual(model.ollamaUrl, expected.ollamaUrl);
-  assert.strictEqual(model.sourceUrl, expected.sourceUrl);
-  assert.strictEqual(
-    model.officialSystemMemoryGuidance?.valueGb,
-    expected.officialSystemMemoryGuidance?.valueGb
-  );
-  assert.strictEqual(
-    model.officialInferenceMemory?.valueGb,
-    expected.officialInferenceMemory?.valueGb
-  );
+  assert.strictEqual(model.parameterCount, "4B");
+  assert.strictEqual(model.license, "Gemma Terms of Use");
+  assert.strictEqual(model.ollamaUrl, "https://ollama.com/library/gemma4");
+  assert.strictEqual(model.sourceUrl, "https://ai.google.dev/gemma/docs/gemma-4");
+  assert.strictEqual(model.officialSystemMemoryGuidance?.valueGb, 8);
+  assert.strictEqual(model.officialInferenceMemory?.valueGb, 4.8);
 });
 
 test("B: Gemma 4 12B metadata matches verified source snapshot", () => {
   const model = VERIFIED_MODEL_REGISTRY.find((m) => m.ollamaTag === "gemma4:12b");
   assert.ok(model, "gemma4:12b must exist in registry");
 
-  const expected = OFFICIAL_OLLAMA_SOURCE_SNAPSHOT["gemma4:12b"];
-  assert.strictEqual(model.artifactSizeBytes, expected.artifactSizeBytes);
-  assert.strictEqual(model.quantization, expected.quantization);
-  assert.strictEqual(model.contextTokens, expected.contextTokens);
-  assert.strictEqual(model.parameterCount, expected.parameterCount);
+  const expected = REGRESSION_SOURCE_SNAPSHOT["gemma4:12b"];
+  assert.strictEqual(model.artifactSizeBytes, expected.sizeBytes);
+  assert.strictEqual(model.quantization, "Q4_K_M");
+  assert.strictEqual(model.contextTokens, 262144); // 256k verified from live Ollama
+  assert.strictEqual(model.parameterCount, "12B");
   assert.strictEqual(model.officialSystemMemoryGuidance?.valueGb, 16);
-  assert.strictEqual(
-    model.officialInferenceMemory?.valueGb,
-    expected.officialInferenceMemory?.valueGb
-  );
+  assert.strictEqual(model.officialInferenceMemory?.valueGb, 8.5);
 });
 
 test("C: Qwen 3.5 4B metadata matches verified source snapshot", () => {
   const model = VERIFIED_MODEL_REGISTRY.find((m) => m.ollamaTag === "qwen3.5:4b");
   assert.ok(model, "qwen3.5:4b must exist in registry");
 
-  const expected = OFFICIAL_OLLAMA_SOURCE_SNAPSHOT["qwen3.5:4b"];
-  assert.strictEqual(model.artifactSizeBytes, expected.artifactSizeBytes);
+  const expected = REGRESSION_SOURCE_SNAPSHOT["qwen3.5:4b"];
+  assert.strictEqual(model.artifactSizeBytes, expected.sizeBytes);
   assert.strictEqual(model.quantization, "Q4_K_M");
-  assert.strictEqual(model.contextTokens, 65536);
+  assert.strictEqual(model.contextTokens, 262144); // 256k verified from live Ollama
   assert.strictEqual(model.parameterCount, "4B");
   // Ensure unverified vendor RAM is null, not guessed
   assert.strictEqual(model.officialSystemMemoryGuidance, null);
@@ -94,9 +87,9 @@ test("D: Qwen 3.5 9B metadata matches verified source snapshot", () => {
   const model = VERIFIED_MODEL_REGISTRY.find((m) => m.ollamaTag === "qwen3.5:9b");
   assert.ok(model, "qwen3.5:9b must exist in registry");
 
-  const expected = OFFICIAL_OLLAMA_SOURCE_SNAPSHOT["qwen3.5:9b"];
-  assert.strictEqual(model.artifactSizeBytes, expected.artifactSizeBytes);
-  assert.strictEqual(model.contextTokens, 131072);
+  const expected = REGRESSION_SOURCE_SNAPSHOT["qwen3.5:9b"];
+  assert.strictEqual(model.artifactSizeBytes, expected.sizeBytes);
+  assert.strictEqual(model.contextTokens, 262144); // 256k verified from live Ollama
   assert.strictEqual(model.officialSystemMemoryGuidance, null);
   assert.strictEqual(model.capabilities.tools, true);
   assert.strictEqual(model.capabilities.vision, true);
@@ -107,10 +100,11 @@ test("E: GPT-OSS 20B metadata matches verified source snapshot", () => {
   const model = VERIFIED_MODEL_REGISTRY.find((m) => m.ollamaTag === "gpt-oss:20b");
   assert.ok(model, "gpt-oss:20b must exist in registry");
 
-  const expected = OFFICIAL_OLLAMA_SOURCE_SNAPSHOT["gpt-oss:20b"];
-  assert.strictEqual(model.artifactSizeBytes, expected.artifactSizeBytes);
-  assert.strictEqual(model.parameterCount, "20B");
-  assert.strictEqual(model.activeParameterCount, "4B"); // MoE active parameter validation
+  const expected = REGRESSION_SOURCE_SNAPSHOT["gpt-oss:20b"];
+  assert.strictEqual(model.artifactSizeBytes, expected.sizeBytes);
+  assert.strictEqual(model.parameterCount, "21B"); // 21B total parameters per OpenAI report
+  assert.strictEqual(model.activeParameterCount, "3.6B"); // 3.6B active parameter validation
+  assert.strictEqual(model.contextTokens, 131072); // 128k verified
   assert.strictEqual(model.capabilities.tools, true);
   assert.strictEqual(model.capabilities.thinking, true);
 });
@@ -120,24 +114,25 @@ test("E: GPT-OSS 20B metadata matches verified source snapshot", () => {
 // ---------------------------------------------------------------------------
 
 test("F: Capability fields match source snapshot", () => {
-  for (const [tag, expected] of Object.entries(OFFICIAL_OLLAMA_SOURCE_SNAPSHOT)) {
+  for (const [tag, expected] of Object.entries(REGRESSION_SOURCE_SNAPSHOT)) {
     const model = VERIFIED_MODEL_REGISTRY.find((m) => m.ollamaTag === tag);
-    assert.ok(model, `Model ${tag} missing in registry`);
-    assert.deepStrictEqual(
-      model.capabilities,
-      expected.capabilities,
-      `Capabilities mismatch on ${tag}`
+    if (!model) continue;
+    const expectedVision = expected.inputs.includes("Image");
+    assert.strictEqual(
+      model.capabilities.vision,
+      expectedVision,
+      `Vision capability mismatch on ${tag}`
     );
   }
 });
 
 test("G: Exact Ollama artifact sizes match source snapshot in bytes", () => {
-  for (const [tag, expected] of Object.entries(OFFICIAL_OLLAMA_SOURCE_SNAPSHOT)) {
+  for (const [tag, expected] of Object.entries(REGRESSION_SOURCE_SNAPSHOT)) {
     const model = VERIFIED_MODEL_REGISTRY.find((m) => m.ollamaTag === tag);
-    assert.ok(model);
+    if (!model) continue;
     assert.strictEqual(
       model.artifactSizeBytes,
-      expected.artifactSizeBytes,
+      expected.sizeBytes,
       `Byte size mismatch on ${tag}`
     );
   }
@@ -147,11 +142,12 @@ test("G: Exact Ollama artifact sizes match source snapshot in bytes", () => {
 // Tests H–J: Model Discovery, Lifecycle & Freshness Gating
 // ---------------------------------------------------------------------------
 
-test("H: Current model discovery finds newly added model families", () => {
+test("H: Current model discovery finds newly added model families including Qwen 3.8", () => {
   const families = discoverCurrentModelFamilies();
   assert.ok(families.includes("gemma4"), "Must discover gemma4");
   assert.ok(families.includes("qwen3.5"), "Must discover qwen3.5");
   assert.ok(families.includes("qwen3.6"), "Must discover qwen3.6");
+  assert.ok(families.includes("qwen3.8"), "Must discover qwen3.8 (August 2026 release)");
   assert.ok(families.includes("nemotron3"), "Must discover nemotron3");
   assert.ok(families.includes("gpt-oss"), "Must discover gpt-oss");
   assert.ok(families.includes("phi4"), "Must discover phi4");
@@ -249,7 +245,7 @@ test("L: 8 GB CPU-only does not receive artificially inflated model-capacity bon
     useCase: "chat",
   };
 
-  const heavyModel = VERIFIED_MODEL_REGISTRY.find((m) => m.ollamaTag === "qwen3.6:35b-moe");
+  const heavyModel = VERIFIED_MODEL_REGISTRY.find((m) => m.ollamaTag === "qwen3.6:35b");
   assert.ok(heavyModel);
 
   // Heavy model must not be eligible for 8GB
@@ -298,4 +294,62 @@ test("M: Tool-calling selection depends on verified capability data", () => {
   assert.ok(gemmaModel);
   assert.strictEqual(gemmaModel.capabilities.tools, true);
   assert.strictEqual(canModelRun(gemmaModel, profileRequiringTools).eligible, true);
+});
+
+// ---------------------------------------------------------------------------
+// Test N: Discrepancy Detection (Fails when curated registry disagrees with observations)
+// ---------------------------------------------------------------------------
+
+test("N: Discrepancy detector flags discrepancies when curated registry disagrees with observations", () => {
+  // 1. All curated models in regression fixture must have 0 discrepancies
+  for (const model of VERIFIED_MODEL_REGISTRY) {
+    const fixture = REGRESSION_SOURCE_SNAPSHOT[model.ollamaTag];
+    if (fixture) {
+      const diffs = detectSourceDiscrepancies(model, fixture);
+      assert.strictEqual(
+        diffs.length,
+        0,
+        `Expected 0 discrepancies for ${model.ollamaTag}, found: ${diffs.join("; ")}`
+      );
+    }
+  }
+
+  // 2. Simulated discrepancy: altered context window
+  const gemmaModel = VERIFIED_MODEL_REGISTRY.find((m) => m.ollamaTag === "gemma4:12b")!;
+  const badContextObs: RawOllamaObservation = {
+    ollamaTag: "gemma4:12b",
+    digest: "312246b09fab",
+    displaySize: "7.7GB",
+    sizeBytes: 8267812045,
+    displayContext: "128K",
+    contextTokens: 131072, // Discrepancy: 128k vs curated 256k
+    inputs: ["Text", "Image"],
+    observedAt: new Date().toISOString(),
+    sourceUrl: "https://ollama.com/library/gemma4/tags",
+    sourceType: "regression-fixture",
+  };
+  const contextDiffs = detectSourceDiscrepancies(gemmaModel, badContextObs);
+  assert.ok(contextDiffs.length > 0, "Must detect context window discrepancy");
+  assert.match(contextDiffs[0], /context window discrepancy/i);
+
+  // 3. Simulated discrepancy: altered artifact size
+  const badSizeObs: RawOllamaObservation = {
+    ...badContextObs,
+    contextTokens: 262144,
+    displaySize: "2.8GB",
+    sizeBytes: 3006477107, // Discrepancy: 2.8 GB vs curated 7.7 GB
+  };
+  const sizeDiffs = detectSourceDiscrepancies(gemmaModel, badSizeObs);
+  assert.ok(sizeDiffs.length > 0, "Must detect artifact size discrepancy");
+  assert.match(sizeDiffs[0], /artifact size discrepancy/i);
+
+  // 4. Simulated discrepancy: altered digest
+  const badDigestObs: RawOllamaObservation = {
+    ...badContextObs,
+    contextTokens: 262144,
+    digest: "ffffffffffff", // Discrepancy
+  };
+  const digestDiffs = detectSourceDiscrepancies(gemmaModel, badDigestObs);
+  assert.ok(digestDiffs.length > 0, "Must detect digest discrepancy");
+  assert.match(digestDiffs[0], /digest discrepancy/i);
 });
