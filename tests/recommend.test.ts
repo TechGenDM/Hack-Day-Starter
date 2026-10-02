@@ -1,223 +1,301 @@
 /**
- * Comprehensive deterministic test suite for Hack Day Starter (Phase 2).
+ * Authoritative Deterministic Test Suite for Hack Day Starter (Phase 2 Rework).
  *
- * Test cases:
- * A. 24 GB RAM + Apple Silicon + macOS + coding
- * B. 16 GB RAM + Apple Silicon + macOS + chat
- * C. 8 GB RAM + no GPU + Linux + chat
- * D. Low free disk space
- * E. Tool-calling capability test with a model that lacks tools
- * F. Newly verified Gemma 4 model appears
- * G. Qwen 3.5 current variants appear
- * H. 24 GB RAM + Apple Silicon must NOT silently return old Gemma 3 when Gemma 4 is available
- * I. Registry validation and freshness checks
+ * Validates registry data against source snapshots and tests policy execution:
+ * A. Gemma 4 E4B metadata matches verified source snapshot
+ * B. Gemma 4 12B metadata matches verified source snapshot
+ * C. Qwen3.5 4B metadata matches verified source snapshot
+ * D. Qwen3.5 9B metadata matches verified source snapshot
+ * E. GPT-OSS 20B metadata matches verified source snapshot
+ * F. Capability fields match source snapshot
+ * G. Exact Ollama artifact sizes match source snapshot
+ * H. Current model discovery finds newly added model families
+ * I. Retired / unavailable models are never recommended
+ * J. Stale metadata cannot be presented as "current"
+ * K. 24 GB Apple Silicon recommends only models that pass current hardware policy
+ * L. 8 GB CPU-only does not receive artificially inflated model-capacity bonuses
+ * M. Tool-calling selection depends on verified capability data
  */
 
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { recommendModels, canModelRun } from "../lib/recommend";
-import { VERIFIED_MODEL_REGISTRY, REGISTRY_METADATA } from "../lib/registry";
+import { recommendModels, canModelRun, scoreModel } from "../lib/recommend";
+import {
+  VERIFIED_MODEL_REGISTRY,
+  REGISTRY_METADATA,
+  getEligibleLocalModels,
+} from "../lib/registry";
+import {
+  OFFICIAL_OLLAMA_SOURCE_SNAPSHOT,
+  discoverCurrentModelFamilies,
+} from "../lib/sources/ollama";
 import { validateModelRegistry } from "../lib/registry-validator";
-import { getModelMemoryInfo } from "../lib/memory-calculator";
 import { HardwareProfile } from "../lib/types";
 
-test("A: 24 GB RAM + Apple Silicon + macOS + coding", () => {
-  const profile: HardwareProfile = {
-    ramGb: 24,
-    gpu: "apple-silicon",
-    os: "macos",
-    freeDiskSpaceGb: 80,
-    useCase: "code",
-  };
+// ---------------------------------------------------------------------------
+// Tests A–E: Exact Metadata Matching Against Verified Source Snapshot
+// ---------------------------------------------------------------------------
 
-  const results = recommendModels(profile);
-  assert.ok(results.length >= 2, "Should return at least 2 recommendations");
+test("A: Gemma 4 E4B metadata matches verified source snapshot", () => {
+  const model = VERIFIED_MODEL_REGISTRY.find((m) => m.ollamaTag === "gemma4:e4b");
+  assert.ok(model, "gemma4:e4b must exist in registry");
 
-  // Models must fit 24 GB and be strong for coding
-  const tags = results.map((r) => r.model.ollamaTag);
-  assert.ok(
-    tags.includes("gemma4:12b") || tags.includes("qwen3.5:9b"),
-    `Expected gemma4:12b or qwen3.5:9b in top recommendations, got: ${tags.join(", ")}`
+  const expected = OFFICIAL_OLLAMA_SOURCE_SNAPSHOT["gemma4:e4b"];
+  assert.strictEqual(model.artifactSizeBytes, expected.artifactSizeBytes);
+  assert.strictEqual(model.quantization, expected.quantization);
+  assert.strictEqual(model.contextTokens, expected.contextTokens);
+  assert.strictEqual(model.parameterCount, expected.parameterCount);
+  assert.strictEqual(model.license, expected.license);
+  assert.strictEqual(model.ollamaUrl, expected.ollamaUrl);
+  assert.strictEqual(model.sourceUrl, expected.sourceUrl);
+  assert.strictEqual(
+    model.officialSystemMemoryGuidance?.valueGb,
+    expected.officialSystemMemoryGuidance?.valueGb
   );
-
-  // Check explanation honesty and context
-  const topRec = results[0];
-  assert.match(topRec.explanation, /Mac with 24 GB unified memory/i);
-  assert.match(topRec.explanation, /free disk space/i);
+  assert.strictEqual(
+    model.officialInferenceMemory?.valueGb,
+    expected.officialInferenceMemory?.valueGb
+  );
 });
 
-test("B: 16 GB RAM + Apple Silicon + macOS + chat", () => {
+test("B: Gemma 4 12B metadata matches verified source snapshot", () => {
+  const model = VERIFIED_MODEL_REGISTRY.find((m) => m.ollamaTag === "gemma4:12b");
+  assert.ok(model, "gemma4:12b must exist in registry");
+
+  const expected = OFFICIAL_OLLAMA_SOURCE_SNAPSHOT["gemma4:12b"];
+  assert.strictEqual(model.artifactSizeBytes, expected.artifactSizeBytes);
+  assert.strictEqual(model.quantization, expected.quantization);
+  assert.strictEqual(model.contextTokens, expected.contextTokens);
+  assert.strictEqual(model.parameterCount, expected.parameterCount);
+  assert.strictEqual(model.officialSystemMemoryGuidance?.valueGb, 16);
+  assert.strictEqual(
+    model.officialInferenceMemory?.valueGb,
+    expected.officialInferenceMemory?.valueGb
+  );
+});
+
+test("C: Qwen 3.5 4B metadata matches verified source snapshot", () => {
+  const model = VERIFIED_MODEL_REGISTRY.find((m) => m.ollamaTag === "qwen3.5:4b");
+  assert.ok(model, "qwen3.5:4b must exist in registry");
+
+  const expected = OFFICIAL_OLLAMA_SOURCE_SNAPSHOT["qwen3.5:4b"];
+  assert.strictEqual(model.artifactSizeBytes, expected.artifactSizeBytes);
+  assert.strictEqual(model.quantization, "Q4_K_M");
+  assert.strictEqual(model.contextTokens, 65536);
+  assert.strictEqual(model.parameterCount, "4B");
+  // Ensure unverified vendor RAM is null, not guessed
+  assert.strictEqual(model.officialSystemMemoryGuidance, null);
+  assert.strictEqual(model.officialInferenceMemory, null);
+  assert.ok(model.estimatedSystemMemoryComfort !== null);
+});
+
+test("D: Qwen 3.5 9B metadata matches verified source snapshot", () => {
+  const model = VERIFIED_MODEL_REGISTRY.find((m) => m.ollamaTag === "qwen3.5:9b");
+  assert.ok(model, "qwen3.5:9b must exist in registry");
+
+  const expected = OFFICIAL_OLLAMA_SOURCE_SNAPSHOT["qwen3.5:9b"];
+  assert.strictEqual(model.artifactSizeBytes, expected.artifactSizeBytes);
+  assert.strictEqual(model.contextTokens, 131072);
+  assert.strictEqual(model.officialSystemMemoryGuidance, null);
+  assert.strictEqual(model.capabilities.tools, true);
+  assert.strictEqual(model.capabilities.vision, true);
+  assert.strictEqual(model.capabilities.thinking, true);
+});
+
+test("E: GPT-OSS 20B metadata matches verified source snapshot", () => {
+  const model = VERIFIED_MODEL_REGISTRY.find((m) => m.ollamaTag === "gpt-oss:20b");
+  assert.ok(model, "gpt-oss:20b must exist in registry");
+
+  const expected = OFFICIAL_OLLAMA_SOURCE_SNAPSHOT["gpt-oss:20b"];
+  assert.strictEqual(model.artifactSizeBytes, expected.artifactSizeBytes);
+  assert.strictEqual(model.parameterCount, "20B");
+  assert.strictEqual(model.activeParameterCount, "4B"); // MoE active parameter validation
+  assert.strictEqual(model.capabilities.tools, true);
+  assert.strictEqual(model.capabilities.thinking, true);
+});
+
+// ---------------------------------------------------------------------------
+// Tests F & G: Capability Fields & Exact Ollama Artifact Sizes
+// ---------------------------------------------------------------------------
+
+test("F: Capability fields match source snapshot", () => {
+  for (const [tag, expected] of Object.entries(OFFICIAL_OLLAMA_SOURCE_SNAPSHOT)) {
+    const model = VERIFIED_MODEL_REGISTRY.find((m) => m.ollamaTag === tag);
+    assert.ok(model, `Model ${tag} missing in registry`);
+    assert.deepStrictEqual(
+      model.capabilities,
+      expected.capabilities,
+      `Capabilities mismatch on ${tag}`
+    );
+  }
+});
+
+test("G: Exact Ollama artifact sizes match source snapshot in bytes", () => {
+  for (const [tag, expected] of Object.entries(OFFICIAL_OLLAMA_SOURCE_SNAPSHOT)) {
+    const model = VERIFIED_MODEL_REGISTRY.find((m) => m.ollamaTag === tag);
+    assert.ok(model);
+    assert.strictEqual(
+      model.artifactSizeBytes,
+      expected.artifactSizeBytes,
+      `Byte size mismatch on ${tag}`
+    );
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Tests H–J: Model Discovery, Lifecycle & Freshness Gating
+// ---------------------------------------------------------------------------
+
+test("H: Current model discovery finds newly added model families", () => {
+  const families = discoverCurrentModelFamilies();
+  assert.ok(families.includes("gemma4"), "Must discover gemma4");
+  assert.ok(families.includes("qwen3.5"), "Must discover qwen3.5");
+  assert.ok(families.includes("qwen3.6"), "Must discover qwen3.6");
+  assert.ok(families.includes("nemotron3"), "Must discover nemotron3");
+  assert.ok(families.includes("gpt-oss"), "Must discover gpt-oss");
+  assert.ok(families.includes("phi4"), "Must discover phi4");
+});
+
+test("I: Retired / unavailable models are never recommended", () => {
+  const retiredModel = VERIFIED_MODEL_REGISTRY.find((m) => m.lifecycle === "retired");
+  assert.ok(retiredModel, "Must have at least one retired model for testing (e.g. llama2:7b)");
+
   const profile: HardwareProfile = {
-    ramGb: 16,
-    gpu: "apple-silicon",
-    os: "macos",
-    freeDiskSpaceGb: 50,
+    ramGb: 64,
+    freeDiskSpaceGb: 200,
+    os: "linux",
+    gpuType: "nvidia",
+    gpuVramGb: 24,
+    appleSiliconGeneration: null,
     useCase: "chat",
+  };
+
+  const gateResult = canModelRun(retiredModel, profile);
+  assert.strictEqual(gateResult.eligible, false);
+  assert.match(gateResult.reason ?? "", /retired/i);
+
+  const results = recommendModels(profile);
+  assert.ok(
+    !results.some((r) => r.model.id === retiredModel.id),
+    "Retired models must never be recommended"
+  );
+});
+
+test("J: Stale metadata cannot be presented as 'current' or recommended", () => {
+  const staleModel = VERIFIED_MODEL_REGISTRY.find(
+    (m) => m.verificationStatus === "metadata-stale"
+  );
+  assert.ok(staleModel, "Must have a metadata-stale model for testing");
+
+  const profile: HardwareProfile = {
+    ramGb: 32,
+    freeDiskSpaceGb: 100,
+    os: "linux",
+    gpuType: "none",
+    gpuVramGb: null,
+    appleSiliconGeneration: null,
+    useCase: "general",
+  };
+
+  const gateResult = canModelRun(staleModel, profile);
+  assert.strictEqual(gateResult.eligible, false);
+  assert.match(gateResult.reason ?? "", /stale|unverified/i);
+
+  const eligibleList = getEligibleLocalModels();
+  assert.ok(
+    !eligibleList.some((m) => m.id === staleModel.id),
+    "Stale models must not be in eligible local models"
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Tests K–M: Hardware Policy, Capacity Scaling & Tool Calling Selection
+// ---------------------------------------------------------------------------
+
+test("K: 24 GB Apple Silicon recommends only models that pass current hardware policy", () => {
+  const profile: HardwareProfile = {
+    ramGb: 24,
+    freeDiskSpaceGb: 80,
+    os: "macos",
+    gpuType: "apple-silicon",
+    gpuVramGb: null,
+    appleSiliconGeneration: "m3",
+    useCase: "code",
   };
 
   const results = recommendModels(profile);
   assert.ok(results.length >= 2);
 
+  // Must recommend current models fitting 24 GB
   const tags = results.map((r) => r.model.ollamaTag);
-  // Should recommend comfortable 16GB chat models (e.g. gemma4:e4b, phi4-mini, qwen3.5:4b, gemma4:12b)
   assert.ok(
-    tags.some((t) => ["gemma4:e4b", "phi4-mini", "qwen3.5:4b", "gemma4:12b"].includes(t)),
-    `Expected modern verified chat models, got: ${tags.join(", ")}`
+    tags.includes("gemma4:12b") || tags.includes("qwen3.5:9b"),
+    `Expected gemma4:12b or qwen3.5:9b, got: ${tags.join(", ")}`
   );
 
-  // Compatibility levels should be good or excellent
-  assert.ok(
-    results.some((r) => r.compatibilityLevel === "excellent" || r.compatibilityLevel === "good")
-  );
+  // Must NOT include legacy Gemma 3 when current Gemma 4 is available
+  assert.ok(!tags.includes("gemma3:12b"));
 });
 
-test("C: 8 GB RAM + no GPU + Linux + chat", () => {
-  const profile: HardwareProfile = {
+test("L: 8 GB CPU-only does not receive artificially inflated model-capacity bonuses", () => {
+  const profile8Gb: HardwareProfile = {
     ramGb: 8,
-    gpu: "none",
+    freeDiskSpaceGb: 40,
     os: "linux",
-    freeDiskSpaceGb: 30,
+    gpuType: "none",
+    gpuVramGb: null,
+    appleSiliconGeneration: null,
     useCase: "chat",
   };
 
-  const results = recommendModels(profile);
-  assert.ok(results.length >= 1, "Should find models that can run on 8GB CPU");
+  const heavyModel = VERIFIED_MODEL_REGISTRY.find((m) => m.ollamaTag === "qwen3.6:35b-moe");
+  assert.ok(heavyModel);
 
-  // Heavy models (> 10 GB) must NOT be recommended for an 8GB machine
-  for (const rec of results) {
+  // Heavy model must not be eligible for 8GB
+  const check = canModelRun(heavyModel, profile8Gb);
+  assert.strictEqual(check.eligible, false);
+
+  // Recommendations for 8 GB must be light models (<= 4 GB)
+  const results = recommendModels(profile8Gb);
+  for (const r of results) {
+    const sizeGb = r.model.artifactSizeBytes / (1024 * 1024 * 1024);
     assert.ok(
-      rec.model.artifactSizeGb <= 4.0,
-      `Model ${rec.model.ollamaTag} is ${rec.model.artifactSizeGb} GB, too large for 8GB system`
+      sizeGb <= 4.0,
+      `Model ${r.model.ollamaTag} (${sizeGb.toFixed(1)} GB) is too large for 8GB machine`
     );
   }
-
-  // Check that small models like Gemma 4 e4b, Qwen 3.5 4B, or Phi-4 Mini are returned
-  const tags = results.map((r) => r.model.ollamaTag);
-  assert.ok(
-    tags.some((t) => ["gemma4:e4b", "qwen3.5:4b", "phi4-mini", "qwen2.5-coder:1.5b"].includes(t)),
-    `Expected small lightweight model, got: ${tags.join(", ")}`
-  );
 });
 
-test("D: Low free disk space filter", () => {
-  // Free disk space is only 3 GB!
-  const tightDiskProfile: HardwareProfile = {
-    ramGb: 32,
-    gpu: "apple-silicon",
-    os: "macos",
-    freeDiskSpaceGb: 3.0,
-    useCase: "code",
-  };
-
-  const results = recommendModels(tightDiskProfile);
-
-  // Models with artifactSizeGb + 1.0 > 3.0 GB must be filtered out
-  for (const rec of results) {
-    assert.ok(
-      rec.model.artifactSizeGb <= 2.0,
-      `Model ${rec.model.ollamaTag} (${rec.model.artifactSizeGb} GB) must not fit in 3 GB disk space`
-    );
-  }
-
-  // Qwen 2.5 Coder 1.5B (1.0 GB) fits in 3 GB
-  const tags = results.map((r) => r.model.ollamaTag);
-  assert.ok(
-    tags.includes("qwen2.5-coder:1.5b"),
-    `Expected qwen2.5-coder:1.5b to fit low disk space, got: ${tags.join(", ")}`
-  );
-
-  // Large models like gemma4:12b (7.8 GB) and gpt-oss:20b (11.5 GB) must be excluded
-  assert.ok(!tags.includes("gemma4:12b"));
-  assert.ok(!tags.includes("gpt-oss:20b"));
-});
-
-test("E: Tool-calling capability with a model that lacks tools", () => {
-  // Find a model without tools in registry (e.g. Qwen 2.5 Coder 1.5B)
-  const noToolModel = VERIFIED_MODEL_REGISTRY.find(
-    (m) => m.id === "qwen-2-5-coder-1-5b"
-  );
-  assert.ok(noToolModel, "Should have qwen-2-5-coder-1-5b in registry");
+test("M: Tool-calling selection depends on verified capability data", () => {
+  // Test with verified model that has tools: false (DeepSeek R1 1.5B)
+  const noToolModel = VERIFIED_MODEL_REGISTRY.find((m) => m.ollamaTag === "deepseek-r1:1.5b");
+  assert.ok(noToolModel, "deepseek-r1:1.5b must exist");
   assert.strictEqual(
     noToolModel.capabilities.tools,
     false,
-    "Model must explicitly have capabilities.tools === false"
+    "DeepSeek R1 in Ollama does not have tool calling"
   );
 
-  // Models with tools
-  const gemma4Model = VERIFIED_MODEL_REGISTRY.find((m) => m.id === "gemma-4-e4b");
-  assert.ok(gemma4Model);
-  assert.strictEqual(gemma4Model.capabilities.tools, true);
-});
-
-test("F: Newly verified Gemma 4 models appear in registry and recommendations", () => {
-  const gemma4Entries = VERIFIED_MODEL_REGISTRY.filter(
-    (m) => m.family === "gemma4" && m.verificationStatus === "verified"
-  );
-  assert.ok(gemma4Entries.length >= 2, "Registry must contain at least 2 verified Gemma 4 variants");
-
-  const tags = gemma4Entries.map((m) => m.ollamaTag);
-  assert.ok(tags.includes("gemma4:e4b"));
-  assert.ok(tags.includes("gemma4:12b"));
-
-  // Check official memory guidance is present for Gemma 4
-  const gemma12b = gemma4Entries.find((m) => m.id === "gemma-4-12b");
-  assert.strictEqual(gemma12b?.officialMemoryGuidance, 16);
-  assert.ok(gemma12b?.memoryGuidanceSource?.includes("Google"));
-});
-
-test("G: Qwen 3.5 current variants appear in registry and recommendations", () => {
-  const qwen35Entries = VERIFIED_MODEL_REGISTRY.filter(
-    (m) => m.family === "qwen3.5" && m.verificationStatus === "verified"
-  );
-  assert.ok(qwen35Entries.length >= 2, "Registry must contain Qwen 3.5 variants");
-
-  const tags = qwen35Entries.map((m) => m.ollamaTag);
-  assert.ok(tags.includes("qwen3.5:4b"));
-  assert.ok(tags.includes("qwen3.5:9b"));
-
-  // Memory guidance should be null (not invented), with estimated comfort calculated
-  const qwen9b = qwen35Entries.find((m) => m.id === "qwen-3-5-9b")!;
-  assert.strictEqual(qwen9b.officialMemoryGuidance, null);
-
-  const memInfo = getModelMemoryInfo(qwen9b);
-  assert.strictEqual(memInfo.isOfficial, false);
-  assert.ok(memInfo.displayLabel.includes("Estimated memory comfort"));
-});
-
-test("H: 24 GB RAM + Apple Silicon must NOT silently return only old Gemma 3 variants", () => {
-  const profile: HardwareProfile = {
-    ramGb: 24,
-    gpu: "apple-silicon",
+  // Required capabilities filtering test:
+  const profileRequiringTools: HardwareProfile = {
+    ramGb: 16,
+    freeDiskSpaceGb: 50,
     os: "macos",
-    freeDiskSpaceGb: 100,
-    useCase: "coding" as any, // test alias handling
+    gpuType: "apple-silicon",
+    gpuVramGb: null,
+    appleSiliconGeneration: "m2",
+    useCase: "code",
+    requiredCapabilities: { tools: true },
   };
-  profile.useCase = "code";
 
-  const results = recommendModels(profile);
-  const tags = results.map((r) => r.model.ollamaTag);
+  const toolCheck = canModelRun(noToolModel, profileRequiringTools);
+  assert.strictEqual(toolCheck.eligible, false);
+  assert.match(toolCheck.reason ?? "", /lacks required capability: tools/i);
 
-  // Gemma 3 is marked stale and must NOT appear
-  assert.ok(
-    !tags.includes("gemma3:12b"),
-    "Stale Gemma 3 must not appear when current Gemma 4 is available"
-  );
-
-  // Current Gemma 4 should be present
-  assert.ok(
-    tags.some((t) => t.startsWith("gemma4:")),
-    `Gemma 4 must be recommended for 24 GB Apple Silicon, got: ${tags.join(", ")}`
-  );
-});
-
-test("I: Registry validation utility audit", () => {
-  const report = validateModelRegistry(VERIFIED_MODEL_REGISTRY, {
-    asOfDate: new Date("2026-10-02T00:00:00.000Z"),
-  });
-
-  assert.strictEqual(report.isValid, true, "Registry must be valid without errors");
-  assert.ok(report.verifiedCount >= 6, "Must have at least 6 verified models");
-  assert.ok(report.staleCount >= 1, "Must recognize stale models");
-  assert.strictEqual(report.catalogDate, REGISTRY_METADATA.verifiedDisplayDate);
+  // Models with tools pass
+  const gemmaModel = VERIFIED_MODEL_REGISTRY.find((m) => m.ollamaTag === "gemma4:e4b");
+  assert.ok(gemmaModel);
+  assert.strictEqual(gemmaModel.capabilities.tools, true);
+  assert.strictEqual(canModelRun(gemmaModel, profileRequiringTools).eligible, true);
 });

@@ -1,11 +1,15 @@
 /**
- * Registry Validation Utility.
+ * Registry Validation & Source Audit Utility.
  *
- * Ensures model records are internally consistent, compliant with the source hierarchy,
- * and detects stale entries exceeding freshness thresholds.
+ * Requirements:
+ * 1. Validates that every model entry has authoritative source links.
+ * 2. Validates exact bytes (> 0), valid quantization, non-empty tags, and valid licenses.
+ * 3. Freshness check: flags records verified older than maxAgeDays (default: 30 days, as 90 days is too long).
+ * 4. Ensures official memory fields have required source URLs.
+ * 5. Audits unverified fields so developers can identify knowledge gaps.
  */
 
-import { ModelEntry, VerificationStatus } from "./types";
+import { ModelEntry } from "./types";
 import { VERIFIED_MODEL_REGISTRY, REGISTRY_METADATA } from "./registry";
 
 export interface ValidationIssue {
@@ -15,25 +19,27 @@ export interface ValidationIssue {
   severity: "error" | "warning";
 }
 
+export interface UnverifiedFieldRecord {
+  modelId: string;
+  ollamaTag: string;
+  field: string;
+  reason: string;
+}
+
 export interface RegistryValidationReport {
   isValid: boolean;
   totalModels: number;
+  currentCount: number;
+  legacyCount: number;
+  retiredCount: number;
   verifiedCount: number;
   staleCount: number;
-  unverifiedCount: number;
   issues: ValidationIssue[];
-  catalogDate: string;
+  unverifiedFields: UnverifiedFieldRecord[];
+  catalogVersion: string;
+  lastVerifiedAt: string;
 }
 
-/**
- * Validates the model registry.
- *
- * Checks:
- * 1. Required fields are non-empty.
- * 2. Official memory guidance has an authoritative source citation.
- * 3. Freshness: entries verified more than maxAgeDays prior to asOfDate are flagged as stale.
- * 4. Verification status matches the freshness and source criteria.
- */
 export function validateModelRegistry(
   models: ModelEntry[] = VERIFIED_MODEL_REGISTRY,
   options?: {
@@ -41,71 +47,119 @@ export function validateModelRegistry(
     maxAgeDays?: number;
   }
 ): RegistryValidationReport {
-  const asOf = options?.asOfDate ?? new Date("2026-10-02T00:00:00.000Z");
-  const maxAgeDays = options?.maxAgeDays ?? 180; // 6 months threshold
+  const asOf = options?.asOfDate ?? new Date("2026-10-02T12:00:00.000Z");
+  const maxAgeDays = options?.maxAgeDays ?? 30; // 30-day freshness window for rapid ecosystem
   const issues: ValidationIssue[] = [];
+  const unverifiedFields: UnverifiedFieldRecord[] = [];
 
+  let currentCount = 0;
+  let legacyCount = 0;
+  let retiredCount = 0;
   let verifiedCount = 0;
   let staleCount = 0;
-  let unverifiedCount = 0;
 
   for (const model of models) {
-    if (model.verificationStatus === "verified") verifiedCount++;
-    else if (model.verificationStatus === "stale") staleCount++;
-    else unverifiedCount++;
+    if (model.lifecycle === "current") currentCount++;
+    else if (model.lifecycle === "legacy") legacyCount++;
+    else if (model.lifecycle === "retired") retiredCount++;
 
-    // 1. Mandatory tags and identifiers
+    if (model.verificationStatus === "verified") verifiedCount++;
+    else if (model.verificationStatus === "metadata-stale") staleCount++;
+
+    // 1. Mandatory exact identification
     if (!model.id || !model.ollamaTag) {
       issues.push({
         modelId: model.id || "unknown",
         field: "id/ollamaTag",
-        message: "Model must have a non-empty id and ollamaTag.",
+        message: "Model must have non-empty id and ollamaTag.",
         severity: "error",
       });
     }
 
-    // 2. Artifact size must be positive
-    if (typeof model.artifactSizeGb !== "number" || model.artifactSizeGb <= 0) {
+    // 2. Exact artifact size in bytes
+    if (typeof model.artifactSizeBytes !== "number" || model.artifactSizeBytes <= 0) {
       issues.push({
         modelId: model.id,
-        field: "artifactSizeGb",
-        message: "Model artifactSizeGb must be a positive number.",
+        field: "artifactSizeBytes",
+        message: "Model must specify exact positive integer artifactSizeBytes.",
         severity: "error",
       });
     }
 
-    // 3. Memory guidance integrity
-    if (model.officialMemoryGuidance !== null) {
-      if (model.officialMemoryGuidance <= 0) {
-        issues.push({
-          modelId: model.id,
-          field: "officialMemoryGuidance",
-          message: "Official memory guidance must be positive if specified.",
-          severity: "error",
-        });
-      }
-      if (!model.memoryGuidanceSource) {
-        issues.push({
-          modelId: model.id,
-          field: "memoryGuidanceSource",
-          message:
-            "Official memory guidance must reference an authoritative source citation.",
-          severity: "error",
-        });
-      }
+    // 3. Exact Quantization format
+    if (!model.quantization || model.quantization.trim() === "") {
+      issues.push({
+        modelId: model.id,
+        field: "quantization",
+        message: "Model must state its exact quantization format (e.g. Q4_K_M).",
+        severity: "error",
+      });
     }
 
-    // 4. Source URLs
-    if (!model.ollamaUrl?.startsWith("http")) {
+    // 4. Source URL hierarchy
+    if (!model.ollamaUrl?.startsWith("https://ollama.com/library/")) {
       issues.push({
         modelId: model.id,
         field: "ollamaUrl",
-        message: "Model must provide a valid official Ollama URL.",
+        message: "Primary source must be an official Ollama library URL.",
+        severity: "error",
+      });
+    }
+    if (!model.sourceUrl?.startsWith("http")) {
+      issues.push({
+        modelId: model.id,
+        field: "sourceUrl",
+        message: "Secondary source must be an official provider or model card URL.",
         severity: "error",
       });
     }
 
-    // 5. Freshness check
+    // 5. Memory specifications audit
+    if (model.officialSystemMemoryGuidance !== null) {
+      if (model.officialSystemMemoryGuidance.valueGb <= 0) {
+        issues.push({
+          modelId: model.id,
+          field: "officialSystemMemoryGuidance.valueGb",
+          message: "Official system memory guidance must be positive.",
+          severity: "error",
+        });
+      }
+      if (!model.officialSystemMemoryGuidance.sourceUrl) {
+        issues.push({
+          modelId: model.id,
+          field: "officialSystemMemoryGuidance.sourceUrl",
+          message: "Official system memory guidance requires a valid sourceUrl.",
+          severity: "error",
+        });
+      }
+    } else {
+      unverifiedFields.push({
+        modelId: model.id,
+        ollamaTag: model.ollamaTag,
+        field: "officialSystemMemoryGuidance",
+        reason: "No vendor system RAM specification published; falling back to labeled heuristic.",
+      });
+    }
+
+    if (model.officialInferenceMemory !== null) {
+      if (!model.officialInferenceMemory.sourceUrl) {
+        issues.push({
+          modelId: model.id,
+          field: "officialInferenceMemory.sourceUrl",
+          message: "Official inference memory requires a valid sourceUrl.",
+          severity: "error",
+        });
+      }
+    } else {
+      unverifiedFields.push({
+        modelId: model.id,
+        ollamaTag: model.ollamaTag,
+        field: "officialInferenceMemory",
+        reason: "No vendor inference VRAM benchmark published.",
+      });
+    }
+
+    // 6. Freshness audit
     const verifiedDate = new Date(model.verifiedAt);
     if (isNaN(verifiedDate.getTime())) {
       issues.push({
@@ -122,9 +176,9 @@ export function validateModelRegistry(
         issues.push({
           modelId: model.id,
           field: "verifiedAt",
-          message: `Model entry is ${Math.floor(
+          message: `Verification timestamp is ${Math.floor(
             ageInDays
-          )} days old and may be stale. Re-verification required.`,
+          )} days old (exceeds ${maxAgeDays}-day threshold). Re-verification required.`,
           severity: "warning",
         });
       }
@@ -136,10 +190,14 @@ export function validateModelRegistry(
   return {
     isValid: !hasErrors,
     totalModels: models.length,
+    currentCount,
+    legacyCount,
+    retiredCount,
     verifiedCount,
     staleCount,
-    unverifiedCount,
     issues,
-    catalogDate: REGISTRY_METADATA.verifiedDisplayDate,
+    unverifiedFields,
+    catalogVersion: REGISTRY_METADATA.registryVersion,
+    lastVerifiedAt: REGISTRY_METADATA.lastVerifiedAt,
   };
 }

@@ -1,20 +1,27 @@
 /**
- * Deterministic recommendation engine for Hack Day Starter.
+ * Deterministic Recommendation Engine for Hack Day Starter.
  *
- * Phase 2 enhancements:
- * - Powered by the Verified Model Registry (`lib/registry.ts`).
- * - Strictly filters by `localSupport === true` and `verificationStatus === "verified"`.
- * - Strictly filters by `freeDiskSpaceGb` (ensuring sufficient room for model artifact).
- * - Distinguishes between official memory guidance and estimated memory comfort.
- * - Scores models based on hardware fit, use case, tool capabilities, model capacity, and disk headroom.
- * - Generates clear, non-hyperbolic explanations with no false performance guarantees.
+ * Phase 2 Rework Rules:
+ * 1. Hard Filters:
+ *    - localSupport === true
+ *    - lifecycle !== 'retired'
+ *    - verificationStatus === 'verified'
+ *    - freeDiskSpaceGb >= artifactSizeGb + safetyMarginGb
+ *    - ramGb >= minimum viable threshold
+ *    - meets any requiredCapabilities specified by the user
+ * 2. Deterministic Scoring:
+ *    - Use-case relevance (+40)
+ *    - Memory headroom & comfort (0–30)
+ *    - Model capacity (0–15) using activeParameterCount for MoE, applied ONLY when hardware supports it
+ *    - GPU acceleration bonus (+20) + VRAM fit bonus (+5 if fits in discrete VRAM)
+ *    - Apple Silicon unified memory bonus (+10)
+ *    - Tool capability bonus (+10)
+ *    - Free disk comfort buffer bonus (+5)
+ * 3. Transparent, non-hyperbolic explanation generation.
  */
 
-import { VERIFIED_MODEL_REGISTRY } from "./registry";
-import {
-  calculateEstimatedMemoryComfort,
-  getModelMemoryInfo,
-} from "./memory-calculator";
+import { getEligibleLocalModels } from "./registry";
+import { formatBytesToGb, getModelMemoryReport } from "./memory-calculator";
 import {
   CompatibilityLevel,
   HardwareProfile,
@@ -25,46 +32,60 @@ import {
 /** Maximum recommendations returned to the user */
 const MAX_RESULTS = 3;
 
-/** Minimum free disk buffer required above artifact size (GB) */
-const DISK_SAFETY_BUFFER_GB = 1.0;
+/** Recommended free disk buffer heuristic (GB) */
+export const RECOMMENDED_DISK_BUFFER_GB = 1.5;
 
 // ---------------------------------------------------------------------------
-// Phase 1: Hard filter — can this model physically be downloaded and run?
+// Phase 1: Hard Filter — Can this model physically run on this hardware?
 // ---------------------------------------------------------------------------
 
 export function canModelRun(
   model: ModelEntry,
   profile: HardwareProfile
 ): { eligible: boolean; reason?: string } {
-  // 1. Must be locally runnable and currently verified
+  // 1. Availability & Lifecycle
   if (!model.localSupport) {
-    return { eligible: false, reason: "Requires cloud environment" };
+    return { eligible: false, reason: "Requires remote or cloud execution" };
+  }
+  if (model.lifecycle === "retired") {
+    return { eligible: false, reason: "Model generation is retired" };
   }
   if (model.verificationStatus !== "verified") {
-    return { eligible: false, reason: "Catalog entry is stale or unverified" };
+    return { eligible: false, reason: "Model metadata is stale or unverified" };
   }
 
-  // 2. Free disk space filter
-  const requiredDisk = model.artifactSizeGb + DISK_SAFETY_BUFFER_GB;
-  if (profile.freeDiskSpaceGb < requiredDisk) {
+  // 2. Storage Check (Artifact Size + Heuristic Safety Buffer)
+  const artifactSizeGb = model.artifactSizeBytes / (1024 * 1024 * 1024);
+  const requiredDiskGb = artifactSizeGb + RECOMMENDED_DISK_BUFFER_GB;
+  if (profile.freeDiskSpaceGb < requiredDiskGb) {
     return {
       eligible: false,
-      reason: `Insufficient free disk space (${profile.freeDiskSpaceGb} GB available, ~${requiredDisk.toFixed(1)} GB required)`,
+      reason: `Insufficient free disk space (${profile.freeDiskSpaceGb} GB free, ~${requiredDiskGb.toFixed(1)} GB required)`,
     };
   }
 
-  // 3. Minimum RAM requirement
-  // If official guidance exists, allow if system has at least 75% of guidance (covers unified memory / slight deficits)
-  // If no official guidance, require at least the artifact size + 1.5 GB runtime floor.
-  const minViableRam =
-    model.officialMemoryGuidance !== null
-      ? Math.floor(model.officialMemoryGuidance * 0.75)
-      : Math.ceil(model.artifactSizeGb + 1.5);
+  // 3. User Required Capabilities Check
+  if (profile.requiredCapabilities) {
+    for (const [key, reqVal] of Object.entries(profile.requiredCapabilities)) {
+      if (reqVal === true && !model.capabilities[key as keyof typeof model.capabilities]) {
+        return {
+          eligible: false,
+          reason: `Model lacks required capability: ${key}`,
+        };
+      }
+    }
+  }
+
+  // 4. Memory Check
+  const memoryReport = getModelMemoryReport(model);
+  const minViableRam = memoryReport.hasOfficialSystemGuidance
+    ? Math.floor(memoryReport.officialSystemGuidanceGb! * 0.75)
+    : Math.ceil(artifactSizeGb + 1.2);
 
   if (profile.ramGb < minViableRam) {
     return {
       eligible: false,
-      reason: `Insufficient RAM (${profile.ramGb} GB available, ~${minViableRam} GB minimum viable)`,
+      reason: `Insufficient system RAM (${profile.ramGb} GB available, ~${minViableRam} GB minimum viable)`,
     };
   }
 
@@ -72,7 +93,7 @@ export function canModelRun(
 }
 
 // ---------------------------------------------------------------------------
-// Phase 2: Scoring — how well does the model fit the developer's scenario?
+// Phase 2: Scoring — Transparent deterministic ranking
 // ---------------------------------------------------------------------------
 
 export function scoreModel(
@@ -80,55 +101,59 @@ export function scoreModel(
   profile: HardwareProfile
 ): number {
   let score = 0;
+  const artifactSizeGb = model.artifactSizeBytes / (1024 * 1024 * 1024);
+  const memoryReport = getModelMemoryReport(model);
 
-  // --- 1. Use-case relevance (0 or 40 pts) ---
+  // --- 1. Use-case Relevance (0 or 40 pts) ---
   if (model.strengths.includes(profile.useCase)) {
     score += 40;
   }
 
-  // --- 2. Memory headroom & comfort (0–30 pts) ---
-  const memoryInfo = getModelMemoryInfo(model);
-  const headroom = profile.ramGb - memoryInfo.valueGb;
-
+  // --- 2. Memory Headroom & Comfort (0–30 pts) ---
+  const headroom = profile.ramGb - memoryReport.recommendationBaselineGb;
   if (headroom >= 0) {
-    // Normalise: 0 GB headroom → 10 pts, ≥16 GB headroom → 30 pts
+    // 0 GB headroom → 10 pts, >= 16 GB headroom → 30 pts
     score += 10 + Math.min(20, (headroom / 16) * 20);
   } else {
-    // Under recommended comfort: score between 0 and 8 pts based on deficit
+    // Deficit: 0 to 8 pts
     score += Math.max(0, 8 + headroom * 2);
   }
 
-  // --- 3. Model capacity bonus (0–15 pts) ---
-  // When system has ample hardware (16+ GB RAM) with healthy headroom (>= 2 GB),
-  // reward capable 8B–12B models for superior reasoning and coding logic.
-  // On constrained machines (<= 8 GB), avoid boosting heavy models so lighter,
-  // responsive models that leave memory for the OS and browser rank first.
+  // --- 3. Model Capacity Bonus (0–15 pts) ---
+  // Parameter count alone must NOT be treated as capability because MoE models
+  // have large total parameter counts but fewer active parameters.
+  // We use activeParameterCount when present (e.g. 4B active for GPT-OSS 20B).
+  // Furthermore, capacity bonus ONLY applies when hardware has >= 16 GB RAM and ample headroom.
   if (profile.ramGb >= 16 && headroom >= 2) {
-    const paramNum = parseFloat(model.parameterCount);
-    if (!isNaN(paramNum)) {
-      score += Math.min(15, (paramNum / 12) * 15);
+    const effectiveParamsStr = model.activeParameterCount ?? model.parameterCount;
+    const effectiveParamNum = parseFloat(effectiveParamsStr);
+    if (!isNaN(effectiveParamNum)) {
+      // Scale up to 15 pts for up to 12B active parameters
+      score += Math.min(15, (effectiveParamNum / 12) * 15);
     }
   }
 
-  // --- 4. GPU acceleration bonus (0 or 20 pts) ---
-  if (model.gpuBenefit && profile.gpu !== "none") {
-    score += 20;
+  // --- 4. GPU & VRAM Bonus (0 to 25 pts) ---
+  if (model.gpuBenefit) {
+    if (profile.gpuType === "nvidia") {
+      score += 20;
+      // Bonus if model fits directly in discrete GPU VRAM
+      if (profile.gpuVramGb !== null && profile.gpuVramGb >= artifactSizeGb + 0.8) {
+        score += 5;
+      }
+    } else if (profile.gpuType === "apple-silicon" && profile.os === "macos") {
+      // Apple Silicon unified memory acceleration via Metal
+      score += 30; // 20 GPU + 10 Apple Silicon bonus
+    }
   }
 
-  // --- 5. Apple Silicon unified memory bonus (0 or 10 pts) ---
-  if (profile.gpu === "apple-silicon" && profile.os === "macos") {
-    score += 10;
-  }
-
-  // --- 6. Tool-calling capability bonus (0 or 10 pts) ---
-  // Models with function calling are more versatile for hack day projects
+  // --- 5. Tool-calling Capability Bonus (0 or 10 pts) ---
   if (model.capabilities.tools) {
     score += 10;
   }
 
-  // --- 7. Disk space comfort bonus (0 or 5 pts) ---
-  // Reward models that leave plenty of free disk space for caches & node_modules
-  if (profile.freeDiskSpaceGb >= model.artifactSizeGb * 2.5) {
+  // --- 6. Free Disk Headroom Bonus (0 or 5 pts) ---
+  if (profile.freeDiskSpaceGb >= artifactSizeGb * 2.5) {
     score += 5;
   }
 
@@ -136,17 +161,17 @@ export function scoreModel(
 }
 
 // ---------------------------------------------------------------------------
-// Phase 3: Classify compatibility level
+// Phase 3: Classification
 // ---------------------------------------------------------------------------
 
 export function classifyCompatibility(
   model: ModelEntry,
   profile: HardwareProfile
 ): CompatibilityLevel {
-  const memoryInfo = getModelMemoryInfo(model);
-  const headroom = profile.ramGb - memoryInfo.valueGb;
+  const memoryReport = getModelMemoryReport(model);
+  const headroom = profile.ramGb - memoryReport.recommendationBaselineGb;
 
-  if (headroom >= 4 && (profile.gpu !== "none" || profile.ramGb >= 16)) {
+  if (headroom >= 4 && (profile.gpuType !== "none" || profile.ramGb >= 16)) {
     return "excellent";
   }
   if (headroom >= 0) {
@@ -156,7 +181,7 @@ export function classifyCompatibility(
 }
 
 // ---------------------------------------------------------------------------
-// Phase 4: Generate transparent, honest explanation
+// Phase 4: Explanation Generation
 // ---------------------------------------------------------------------------
 
 export function buildExplanation(
@@ -165,40 +190,40 @@ export function buildExplanation(
   compatibility: CompatibilityLevel
 ): string {
   const parts: string[] = [];
+  const artifactSizeGb = model.artifactSizeBytes / (1024 * 1024 * 1024);
+  const formattedSize = formatBytesToGb(model.artifactSizeBytes);
 
   // Hardware context
   const hwDescription =
-    profile.gpu === "apple-silicon" && profile.os === "macos"
+    profile.gpuType === "apple-silicon" && profile.os === "macos"
       ? `Mac with ${profile.ramGb} GB unified memory`
-      : profile.gpu === "nvidia"
-      ? `system with ${profile.ramGb} GB RAM and NVIDIA GPU acceleration`
+      : profile.gpuType === "nvidia"
+      ? `system with ${profile.ramGb} GB RAM and NVIDIA GPU`
       : `system with ${profile.ramGb} GB RAM (CPU-only)`;
 
   parts.push(
-    `Recommended because your ${hwDescription} fits the ~${model.artifactSizeGb} GB Ollama artifact`
+    `Recommended because your ${hwDescription} fits the exact ~${formattedSize} Ollama artifact`
   );
 
   // Free disk space context
-  const diskRemaining = profile.freeDiskSpaceGb - model.artifactSizeGb;
+  const diskRemaining = profile.freeDiskSpaceGb - artifactSizeGb;
   parts.push(
-    `leaves ~${diskRemaining.toFixed(0)} GB free disk space`
+    `leaves ~${diskRemaining.toFixed(0)} GB free disk space (after recommended ${RECOMMENDED_DISK_BUFFER_GB} GB safety buffer)`
   );
 
   // Use case & capability context
-  const hasTools = model.capabilities.tools;
   if (model.strengths.includes(profile.useCase)) {
-    if (hasTools) {
+    if (model.capabilities.tools) {
       parts.push(
-        `supports your selected ${profile.useCase} use case with native tool-calling`
+        `supports your selected ${profile.useCase} use case with verified tool calling`
       );
     } else {
       parts.push(`specialised for your ${profile.useCase} use case`);
     }
   } else {
-    parts.push(`capable general model that runs within your constraints`);
+    parts.push(`general-purpose model meeting your hardware constraints`);
   }
 
-  // Marginal fit disclaimer
   if (compatibility === "marginal") {
     parts.push(`tight memory headroom — consider closing background applications`);
   }
@@ -212,9 +237,9 @@ export function buildExplanation(
 
 export function recommendModels(
   profile: HardwareProfile,
-  catalog: ModelEntry[] = VERIFIED_MODEL_REGISTRY
+  catalog: ModelEntry[] = getEligibleLocalModels()
 ): Recommendation[] {
-  // 1. Filter out physically incompatible models
+  // 1. Filter out ineligible models
   const eligible = catalog.filter((m) => canModelRun(m, profile).eligible);
 
   // 2. Score and sort descending
@@ -222,17 +247,21 @@ export function recommendModels(
     .map((model) => ({ model, score: scoreModel(model, profile) }))
     .sort((a, b) => b.score - a.score);
 
-  // 3. Return top N with rich explanations and memory guidance
+  // 3. Return top N with comprehensive metadata
   return scored.slice(0, MAX_RESULTS).map(({ model }) => {
     const compatibility = classifyCompatibility(model, profile);
-    const memoryInfo = getModelMemoryInfo(model);
 
     return {
       model,
       compatibilityLevel: compatibility,
       explanation: buildExplanation(model, profile, compatibility),
-      estimatedMemoryComfort: calculateEstimatedMemoryComfort(model),
-      memoryGuidanceType: memoryInfo.isOfficial ? "official" : "estimated",
+      formattedArtifactSize: formatBytesToGb(model.artifactSizeBytes),
+      recommendedDiskBufferGb: RECOMMENDED_DISK_BUFFER_GB,
+      memory: {
+        officialInference: model.officialInferenceMemory,
+        officialSystemGuidance: model.officialSystemMemoryGuidance,
+        estimatedComfort: model.estimatedSystemMemoryComfort,
+      },
     };
   });
 }

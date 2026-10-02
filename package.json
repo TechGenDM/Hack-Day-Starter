@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx --test tests/recommend.test.ts"
+    "test": "tsx --test tests/recommend.test.ts",
+    "sync-registry": "tsx scripts/sync-model-registry.ts"
   },
   "dependencies": {
     "next": "16.3.8",
