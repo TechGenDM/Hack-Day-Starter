@@ -1,14 +1,25 @@
 /**
- * Live Ollama Source Synchronization, Discovery & Discrepancy Verification.
+ * Model Discovery, Synchronization & Verification Architecture:
  *
- * Requirements:
- * 1. Queries live official Ollama pages (https://ollama.com/library/[model]/tags) at runtime.
- * 2. Parses live HTML for exact:
- *    - tag, digest, display size, size in bytes, context window, input modalities (Text, Image).
- * 3. Maintains a local regression fixture snapshot solely for deterministic testing/offline fallback.
- * 4. Compares curated registry records against raw observations and flags any discrepancy
- *    ("source-discrepancy").
- * 5. Accurately distinguishes "observed from live source" from "verified against source snapshot".
+ *   LIVE ECOSYSTEM DISCOVERY
+ *             ↓
+ *   PRACTICAL CANDIDATE SELECTION
+ *             ↓
+ *   SOURCE VERIFICATION
+ *             ↓
+ *   RECOMMENDATION
+ *
+ * Note: The candidate models represent a curated practical set evaluated for
+ * local laptop execution, not the entire unbounded Ollama library catalog.
+ *
+ * Factual Precision Principles:
+ * 1. sourceDisplaySize: exact string shown on Ollama web pages (e.g. "6.6GB", "6.6–9.5 GB").
+ * 2. normalizedApproxSizeGb: numeric approximation in GB for hardware calculations.
+ * 3. exactManifestSizeBytes: nullable! Null unless retrieved from actual raw manifest.
+ *    Never derive "exact bytes" by converting a rounded display string.
+ * 4. displayDigest: short 12-char digest shown on web pages (e.g. "009acb0d7fe1").
+ * 5. fullManifestDigest: nullable! Null unless retrieved as sha256:<64 hex> from manifest.
+ * 6. capabilities: unverified capabilities are stored as null rather than guessed false.
  */
 
 import {
@@ -20,16 +31,16 @@ import {
 } from "../types";
 
 /**
- * Parses raw text size (e.g. "6.6GB", "7.7GB", "900MB", "23GB - 24GB") to bytes.
+ * Parses raw text size (e.g. "6.6GB", "7.7GB", "900MB", "23GB - 24GB") to approximate GB.
  */
-export function parseSizeToBytes(sizeStr: string): number {
+export function parseSizeToApproxGb(sizeStr: string): number {
   const match = sizeStr.match(/([0-9.]+)\s*(GB|MB|TB)/i);
   if (!match) return 0;
   const val = parseFloat(match[1]);
   const unit = match[2].toUpperCase();
-  if (unit === "GB") return Math.round(val * 1024 * 1024 * 1024);
-  if (unit === "MB") return Math.round(val * 1024 * 1024);
-  if (unit === "TB") return Math.round(val * 1024 * 1024 * 1024 * 1024);
+  if (unit === "GB") return val;
+  if (unit === "MB") return parseFloat((val / 1024).toFixed(2));
+  if (unit === "TB") return val * 1024;
   return 0;
 }
 
@@ -47,7 +58,7 @@ export function parseContextToTokens(contextStr: string): number {
 }
 
 /**
- * Live fetch: queries official Ollama library tags page over network.
+ * Live fetch: queries official Ollama library tags page over network at runtime.
  */
 export async function fetchLiveOllamaTagObservation(
   model: string,
@@ -105,8 +116,8 @@ export function parseOllamaTagsHtml(
   if (!match) return null;
 
   const fullTag = `${model}:${match[1] || targetTag}`;
-  const digest = match[2];
-  const displaySize = match[3].trim();
+  const displayDigest = match[2];
+  const sourceDisplaySize = match[3].trim();
   const displayContext = match[4].trim();
   const details = match[5];
 
@@ -115,14 +126,28 @@ export function parseOllamaTagsHtml(
   if (/Text/i.test(details)) inputs.push("Text");
   if (/Audio/i.test(details)) inputs.push("Audio");
 
+  // Extract raw capability badges shown in tag entry
+  const capabilityBadges: string[] = [...inputs];
+  const badgeRegex = /<span[^>]*class="[^"]*rounded-full[^"]*"[^>]*>([\s\S]*?)<\/span>/gi;
+  let bMatch;
+  while ((bMatch = badgeRegex.exec(details || "")) !== null) {
+    const badgeText = bMatch[1].replace(/<[^>]+>/g, "").trim();
+    if (badgeText && !capabilityBadges.includes(badgeText)) {
+      capabilityBadges.push(badgeText);
+    }
+  }
+
   return {
     ollamaTag: fullTag,
-    digest,
-    displaySize,
-    sizeBytes: parseSizeToBytes(displaySize),
+    displayDigest,
+    fullManifestDigest: null, // Only populated when raw sha256 manifest is retrieved
+    sourceDisplaySize,
+    normalizedApproxSizeGb: parseSizeToApproxGb(sourceDisplaySize),
+    exactManifestSizeBytes: null, // Never derive exact bytes from rounded display strings
     displayContext,
     contextTokens: parseContextToTokens(displayContext),
     inputs,
+    capabilityBadges,
     observedAt: new Date().toISOString(),
     sourceUrl: `https://ollama.com/library/${model}/tags`,
     sourceType,
@@ -137,204 +162,255 @@ export function parseOllamaTagsHtml(
 export const REGRESSION_SOURCE_SNAPSHOT: Record<string, RawOllamaObservation> = {
   "gemma4:e4b": {
     ollamaTag: "gemma4:e4b",
-    digest: "009acb0d7fe1",
-    displaySize: "6.6GB",
-    sizeBytes: 7086696038, // 6.6 GB
+    displayDigest: "009acb0d7fe1",
+    fullManifestDigest: null,
+    sourceDisplaySize: "6.6GB",
+    normalizedApproxSizeGb: 6.6,
+    exactManifestSizeBytes: null,
     displayContext: "128K",
     contextTokens: 131072,
     inputs: ["Text", "Image"],
+    capabilityBadges: ["Text", "Image"],
     observedAt: "2026-10-02T13:00:00.000Z",
     sourceUrl: "https://ollama.com/library/gemma4/tags",
     sourceType: "regression-fixture",
   },
   "gemma4:12b": {
     ollamaTag: "gemma4:12b",
-    digest: "312246b09fab",
-    displaySize: "7.7GB",
-    sizeBytes: 8267812045, // 7.7 GB exact live size
+    displayDigest: "312246b09fab",
+    fullManifestDigest: null,
+    sourceDisplaySize: "7.7GB",
+    normalizedApproxSizeGb: 7.7,
+    exactManifestSizeBytes: null,
     displayContext: "256K",
-    contextTokens: 262144, // 256k verified
+    contextTokens: 262144, // 256k verified from live Ollama
     inputs: ["Text", "Image"],
+    capabilityBadges: ["Text", "Image"],
     observedAt: "2026-10-02T13:00:00.000Z",
     sourceUrl: "https://ollama.com/library/gemma4/tags",
     sourceType: "regression-fixture",
   },
   "qwen3.5:4b": {
     ollamaTag: "qwen3.5:4b",
-    digest: "2a654d98e6fb",
-    displaySize: "3.4GB",
-    sizeBytes: 3650722202, // 3.4 GB exact live size
+    displayDigest: "2a654d98e6fb",
+    fullManifestDigest: null,
+    sourceDisplaySize: "3.4GB",
+    normalizedApproxSizeGb: 3.4,
+    exactManifestSizeBytes: null,
     displayContext: "256K",
-    contextTokens: 262144, // 256k verified
+    contextTokens: 262144, // 256k verified from live Ollama
     inputs: ["Text", "Image"],
+    capabilityBadges: ["Text", "Image"],
     observedAt: "2026-10-02T13:00:00.000Z",
     sourceUrl: "https://ollama.com/library/qwen3.5/tags",
     sourceType: "regression-fixture",
   },
   "qwen3.5:9b": {
     ollamaTag: "qwen3.5:9b",
-    digest: "6488c96fa5fa",
-    displaySize: "6.6GB",
-    sizeBytes: 7086696038, // 6.6 GB
+    displayDigest: "6488c96fa5fa",
+    fullManifestDigest: null,
+    sourceDisplaySize: "6.6GB",
+    normalizedApproxSizeGb: 6.6,
+    exactManifestSizeBytes: null,
     displayContext: "256K",
-    contextTokens: 262144, // 256k verified
+    contextTokens: 262144, // 256k verified from live Ollama
     inputs: ["Text", "Image"],
+    capabilityBadges: ["Text", "Image"],
     observedAt: "2026-10-02T13:00:00.000Z",
     sourceUrl: "https://ollama.com/library/qwen3.5/tags",
     sourceType: "regression-fixture",
   },
   "qwen3.6:27b": {
     ollamaTag: "qwen3.6:27b",
-    digest: "1e2b3d172b7c",
-    displaySize: "18GB",
-    sizeBytes: 19327352832, // 18 GB
+    displayDigest: "1e2b3d172b7c",
+    fullManifestDigest: null,
+    sourceDisplaySize: "18GB",
+    normalizedApproxSizeGb: 18.0,
+    exactManifestSizeBytes: null,
     displayContext: "256K",
     contextTokens: 262144,
     inputs: ["Text", "Image"],
+    capabilityBadges: ["Text", "Image"],
     observedAt: "2026-10-02T13:00:00.000Z",
     sourceUrl: "https://ollama.com/library/qwen3.6/tags",
     sourceType: "regression-fixture",
   },
   "qwen3.6:35b": {
     ollamaTag: "qwen3.6:35b",
-    digest: "8a43277aac50",
-    displaySize: "23GB",
-    sizeBytes: 24696061952, // 23 GB
+    displayDigest: "8a43277aac50",
+    fullManifestDigest: null,
+    sourceDisplaySize: "23GB",
+    normalizedApproxSizeGb: 23.0,
+    exactManifestSizeBytes: null,
     displayContext: "256K",
     contextTokens: 262144,
     inputs: ["Text", "Image"],
+    capabilityBadges: ["Text", "Image"],
     observedAt: "2026-10-02T13:00:00.000Z",
     sourceUrl: "https://ollama.com/library/qwen3.6/tags",
     sourceType: "regression-fixture",
   },
   "qwen3.8:27b": {
     ollamaTag: "qwen3.8:27b",
-    digest: "e118e4d12a70",
-    displaySize: "18GB",
-    sizeBytes: 19327352832, // 18 GB
+    displayDigest: "e118e4d12a70",
+    fullManifestDigest: null,
+    sourceDisplaySize: "18GB",
+    normalizedApproxSizeGb: 18.0,
+    exactManifestSizeBytes: null,
     displayContext: "256K",
     contextTokens: 262144, // 256k verified
     inputs: ["Text", "Image"],
+    capabilityBadges: ["Text", "Image"],
     observedAt: "2026-10-02T13:00:00.000Z",
     sourceUrl: "https://ollama.com/library/qwen3.8/tags",
     sourceType: "regression-fixture",
   },
   "qwen3:8b": {
     ollamaTag: "qwen3:8b",
-    digest: "500a1f067a9f",
-    displaySize: "5.2GB",
-    sizeBytes: 5583457485, // 5.2 GB exact live size
+    displayDigest: "500a1f067a9f",
+    fullManifestDigest: null,
+    sourceDisplaySize: "5.2GB",
+    normalizedApproxSizeGb: 5.2,
+    exactManifestSizeBytes: null,
     displayContext: "40K",
     contextTokens: 40960, // 40K verified from live Ollama
     inputs: ["Text"],
+    capabilityBadges: ["Text"],
     observedAt: "2026-10-02T13:00:00.000Z",
     sourceUrl: "https://ollama.com/library/qwen3/tags",
     sourceType: "regression-fixture",
   },
   "gpt-oss:20b": {
     ollamaTag: "gpt-oss:20b",
-    digest: "17052f91a42e",
-    displaySize: "14GB",
-    sizeBytes: 15032385536, // 14 GB
+    displayDigest: "17052f91a42e",
+    fullManifestDigest: null,
+    sourceDisplaySize: "14GB",
+    normalizedApproxSizeGb: 14.0,
+    exactManifestSizeBytes: null,
     displayContext: "128K",
     contextTokens: 131072, // 128k verified
     inputs: ["Text"],
+    capabilityBadges: ["Text"],
     observedAt: "2026-10-02T13:00:00.000Z",
     sourceUrl: "https://ollama.com/library/gpt-oss/tags",
     sourceType: "regression-fixture",
   },
   "phi4-mini": {
     ollamaTag: "phi4-mini",
-    digest: "78fad5d182a7",
-    displaySize: "2.5GB",
-    sizeBytes: 2684354560, // 2.5 GB
+    displayDigest: "78fad5d182a7",
+    fullManifestDigest: null,
+    sourceDisplaySize: "2.5GB",
+    normalizedApproxSizeGb: 2.5,
+    exactManifestSizeBytes: null,
     displayContext: "128K",
     contextTokens: 131072,
     inputs: ["Text"],
+    capabilityBadges: ["Text"],
     observedAt: "2026-10-02T13:00:00.000Z",
     sourceUrl: "https://ollama.com/library/phi4-mini/tags",
     sourceType: "regression-fixture",
   },
   "nemotron-3-nano:4b": {
     ollamaTag: "nemotron-3-nano:4b",
-    digest: "6cc467f05439",
-    displaySize: "2.8GB",
-    sizeBytes: 3006477107, // 2.8 GB
+    displayDigest: "6cc467f05439",
+    fullManifestDigest: null,
+    sourceDisplaySize: "2.8GB",
+    normalizedApproxSizeGb: 2.8,
+    exactManifestSizeBytes: null,
     displayContext: "256K",
     contextTokens: 262144, // 256k verified
     inputs: ["Text"],
+    capabilityBadges: ["Text"],
     observedAt: "2026-10-02T13:00:00.000Z",
     sourceUrl: "https://ollama.com/library/nemotron-3-nano/tags",
     sourceType: "regression-fixture",
   },
   "qwen3-coder-next:latest": {
     ollamaTag: "qwen3-coder-next:latest",
-    digest: "ca06e9e4087c",
-    displaySize: "52GB",
-    sizeBytes: 55834574848, // 52 GB
+    displayDigest: "ca06e9e4087c",
+    fullManifestDigest: null,
+    sourceDisplaySize: "52GB",
+    normalizedApproxSizeGb: 52.0,
+    exactManifestSizeBytes: null,
     displayContext: "256K",
     contextTokens: 262144, // 256k verified
     inputs: ["Text"],
+    capabilityBadges: ["Text"],
     observedAt: "2026-10-02T13:00:00.000Z",
     sourceUrl: "https://ollama.com/library/qwen3-coder-next/tags",
     sourceType: "regression-fixture",
   },
   "deepseek-r1:1.5b": {
     ollamaTag: "deepseek-r1:1.5b",
-    digest: "e0979632db5a",
-    displaySize: "1.1GB",
-    sizeBytes: 1181116006, // 1.1 GB
+    displayDigest: "e0979632db5a",
+    fullManifestDigest: null,
+    sourceDisplaySize: "1.1GB",
+    normalizedApproxSizeGb: 1.1,
+    exactManifestSizeBytes: null,
     displayContext: "128K",
     contextTokens: 131072,
     inputs: ["Text"],
+    capabilityBadges: ["Text"],
     observedAt: "2026-10-02T13:00:00.000Z",
     sourceUrl: "https://ollama.com/library/deepseek-r1/tags",
     sourceType: "regression-fixture",
   },
   "gemma3:12b": {
     ollamaTag: "gemma3:12b",
-    digest: "f4031aab637d",
-    displaySize: "8.1GB",
-    sizeBytes: 8697308774,
+    displayDigest: "f4031aab637d",
+    fullManifestDigest: null,
+    sourceDisplaySize: "8.1GB",
+    normalizedApproxSizeGb: 8.1,
+    exactManifestSizeBytes: null,
     displayContext: "128K",
     contextTokens: 131072,
     inputs: ["Text", "Image"],
+    capabilityBadges: ["Text", "Image"],
     observedAt: "2026-10-02T13:00:00.000Z",
     sourceUrl: "https://ollama.com/library/gemma3/tags",
     sourceType: "regression-fixture",
   },
   "llama2:7b": {
     ollamaTag: "llama2:7b",
-    digest: "78e26419b446", // Exact live digest
-    displaySize: "3.8GB",
-    sizeBytes: 4080218931,
+    displayDigest: "78e26419b446", // Exact live digest
+    sourceDisplaySize: "3.8GB",
+    normalizedApproxSizeGb: 3.8,
+    exactManifestSizeBytes: null,
+    fullManifestDigest: null,
     displayContext: "4K",
     contextTokens: 4096,
     inputs: ["Text"],
+    capabilityBadges: ["Text"],
     observedAt: "2026-10-02T13:00:00.000Z",
     sourceUrl: "https://ollama.com/library/llama2/tags",
     sourceType: "regression-fixture",
   },
   "mistral:v0.1": {
     ollamaTag: "mistral:v0.1",
-    digest: "b17615239298",
-    displaySize: "4.1GB",
-    sizeBytes: 4402341478,
+    displayDigest: "b17615239298",
+    fullManifestDigest: null,
+    sourceDisplaySize: "4.1GB",
+    normalizedApproxSizeGb: 4.1,
+    exactManifestSizeBytes: null,
     displayContext: "32K",
     contextTokens: 32768,
     inputs: ["Text"],
+    capabilityBadges: ["Text"],
     observedAt: "2025-01-10T00:00:00.000Z",
     sourceUrl: "https://ollama.com/library/mistral/tags",
     sourceType: "regression-fixture",
   },
   "glm4:9b": {
     ollamaTag: "glm4:9b",
-    digest: "5b699761eca5",
-    displaySize: "5.5GB",
-    sizeBytes: 5905580032,
+    displayDigest: "5b699761eca5",
+    fullManifestDigest: null,
+    sourceDisplaySize: "5.5GB",
+    normalizedApproxSizeGb: 5.5,
+    exactManifestSizeBytes: null,
     displayContext: "128K",
     contextTokens: 131072,
     inputs: ["Text"],
+    capabilityBadges: ["Text"],
     observedAt: "2026-10-02T13:00:00.000Z",
     sourceUrl: "https://ollama.com/library/glm4/tags",
     sourceType: "regression-fixture",
@@ -358,26 +434,28 @@ export function detectSourceDiscrepancies(
     );
   }
 
-  // 2. Artifact size check (tolerance within 15% or exact match)
-  const sizeDiffRatio = Math.abs(model.artifactSizeBytes - obs.sizeBytes) / obs.sizeBytes;
-  if (sizeDiffRatio > 0.15) {
+  // 2. Listed size check: compare normalized approx GB (tolerance within 10%)
+  const sizeDiffRatio =
+    Math.abs(model.normalizedApproxSizeGb - obs.normalizedApproxSizeGb) /
+    obs.normalizedApproxSizeGb;
+  if (sizeDiffRatio > 0.10) {
     discrepancies.push(
-      `Artifact size discrepancy: curated ${model.artifactSizeBytes} B vs observed ${obs.sizeBytes} B (${obs.displaySize})`
+      `Ollama listed size discrepancy: curated ~${model.normalizedApproxSizeGb} GB ("${model.sourceDisplaySize}") vs observed ~${obs.normalizedApproxSizeGb} GB ("${obs.sourceDisplaySize}")`
     );
   }
 
-  // 3. Multimodal vision input check
+  // 3. Vision modality check
   const obsHasVision = obs.inputs.includes("Image");
-  if (model.capabilities.vision !== obsHasVision) {
+  if (model.capabilities.vision !== null && model.capabilities.vision !== obsHasVision) {
     discrepancies.push(
       `Vision capability discrepancy: curated vision=${model.capabilities.vision} vs observed inputs=[${obs.inputs.join(", ")}]`
     );
   }
 
-  // 4. Digest check
-  if (model.ollamaDigest && obs.digest && model.ollamaDigest !== obs.digest) {
+  // 4. Display digest check (short 12-char digest)
+  if (model.displayDigest && obs.displayDigest && model.displayDigest !== obs.displayDigest) {
     discrepancies.push(
-      `Digest discrepancy: curated ${model.ollamaDigest} vs observed ${obs.digest}`
+      `Display digest discrepancy: curated ${model.displayDigest} vs observed ${obs.displayDigest}`
     );
   }
 
@@ -385,7 +463,7 @@ export function detectSourceDiscrepancies(
 }
 
 // ---------------------------------------------------------------------------
-// Curated Model Registry Definition
+// Curated Model Registry Definition (Practical Candidate Set)
 // ---------------------------------------------------------------------------
 
 export const CURATED_MODEL_DEFINITIONS: ModelEntry[] = [
@@ -398,20 +476,24 @@ export const CURATED_MODEL_DEFINITIONS: ModelEntry[] = [
     displayName: "Gemma 4 e4b",
     provider: "Google",
     ollamaTag: "gemma4:e4b",
-    ollamaDigest: "009acb0d7fe1",
+    displayDigest: "009acb0d7fe1",
+    fullManifestDigest: null,
     ollamaUrl: "https://ollama.com/library/gemma4",
     sourceUrl: "https://ai.google.dev/gemma/docs/gemma-4",
     license: "Gemma Terms of Use",
     parameterCount: "4B",
     activeParameterCount: null,
     quantization: "Q4_K_M",
-    artifactSizeBytes: 7086696038, // 6.6 GB exact Ollama tag size
+    sourceDisplaySize: "6.6GB",
+    normalizedApproxSizeGb: 6.6,
+    exactManifestSizeBytes: null, // Web source displays rounded value; raw manifest bytes not downloaded
     contextTokens: 131072, // 128k
     capabilities: {
       tools: true,
       vision: true,
-      audio: false,
+      audio: null, // primary source does not verify audio
       thinking: true,
+      capabilityBadges: ["Text", "Image"],
     },
     localSupport: true,
     lifecycle: "current",
@@ -432,7 +514,7 @@ export const CURATED_MODEL_DEFINITIONS: ModelEntry[] = [
     estimatedSystemMemoryComfort: {
       valueGb: 9,
       methodology:
-        "Artifact size (~6.6 GB) + KV cache buffer (2.0 GB) + OS headroom, rounded up. Heuristic estimate only.",
+        "Ollama listed (~6.6 GB) + KV cache buffer (2.0 GB) + OS headroom, rounded up. Heuristic estimate only.",
     },
     strengths: ["code", "chat", "general"],
     gpuBenefit: true,
@@ -446,20 +528,24 @@ export const CURATED_MODEL_DEFINITIONS: ModelEntry[] = [
     displayName: "Gemma 4 12B",
     provider: "Google",
     ollamaTag: "gemma4:12b",
-    ollamaDigest: "312246b09fab",
+    displayDigest: "312246b09fab",
+    fullManifestDigest: null,
     ollamaUrl: "https://ollama.com/library/gemma4",
     sourceUrl: "https://ai.google.dev/gemma/docs/gemma-4",
     license: "Gemma Terms of Use",
     parameterCount: "12B",
     activeParameterCount: null,
     quantization: "Q4_K_M",
-    artifactSizeBytes: 8267812045, // 7.7 GB exact Ollama tag size
+    sourceDisplaySize: "7.7GB",
+    normalizedApproxSizeGb: 7.7,
+    exactManifestSizeBytes: null,
     contextTokens: 262144, // 256k verified from live Ollama
     capabilities: {
       tools: true,
       vision: true,
-      audio: false,
+      audio: null,
       thinking: true,
+      capabilityBadges: ["Text", "Image"],
     },
     localSupport: true,
     lifecycle: "current",
@@ -480,7 +566,7 @@ export const CURATED_MODEL_DEFINITIONS: ModelEntry[] = [
     estimatedSystemMemoryComfort: {
       valueGb: 11,
       methodology:
-        "Artifact size (~7.7 GB) + KV cache buffer (2.5 GB) + OS headroom, rounded up. Heuristic estimate only.",
+        "Ollama listed (~7.7 GB) + KV cache buffer (2.5 GB) + OS headroom, rounded up. Heuristic estimate only.",
     },
     strengths: ["code", "chat", "general", "summarization"],
     gpuBenefit: true,
@@ -497,20 +583,24 @@ export const CURATED_MODEL_DEFINITIONS: ModelEntry[] = [
     displayName: "Qwen 3.5 4B",
     provider: "Alibaba Qwen",
     ollamaTag: "qwen3.5:4b",
-    ollamaDigest: "2a654d98e6fb",
+    displayDigest: "2a654d98e6fb",
+    fullManifestDigest: null,
     ollamaUrl: "https://ollama.com/library/qwen3.5",
     sourceUrl: "https://github.com/QwenLM/Qwen3.5",
     license: "Apache-2.0",
     parameterCount: "4B",
     activeParameterCount: null,
     quantization: "Q4_K_M",
-    artifactSizeBytes: 3650722202, // 3.4 GB exact Ollama tag size
+    sourceDisplaySize: "3.4GB",
+    normalizedApproxSizeGb: 3.4,
+    exactManifestSizeBytes: null,
     contextTokens: 262144, // 256k verified from live Ollama
     capabilities: {
       tools: true,
       vision: true,
-      audio: false,
+      audio: null,
       thinking: true,
+      capabilityBadges: ["Text", "Image"],
     },
     localSupport: true,
     lifecycle: "current",
@@ -523,7 +613,7 @@ export const CURATED_MODEL_DEFINITIONS: ModelEntry[] = [
     estimatedSystemMemoryComfort: {
       valueGb: 6,
       methodology:
-        "Artifact size (~3.4 GB) + KV cache buffer (2.0 GB) + OS headroom, rounded up. Heuristic estimate only.",
+        "Ollama listed (~3.4 GB) + KV cache buffer (2.0 GB) + OS headroom, rounded up. Heuristic estimate only.",
     },
     strengths: ["code", "chat", "general"],
     gpuBenefit: true,
@@ -537,20 +627,24 @@ export const CURATED_MODEL_DEFINITIONS: ModelEntry[] = [
     displayName: "Qwen 3.5 9B",
     provider: "Alibaba Qwen",
     ollamaTag: "qwen3.5:9b",
-    ollamaDigest: "6488c96fa5fa",
+    displayDigest: "6488c96fa5fa",
+    fullManifestDigest: null,
     ollamaUrl: "https://ollama.com/library/qwen3.5",
     sourceUrl: "https://github.com/QwenLM/Qwen3.5",
     license: "Apache-2.0",
     parameterCount: "9B",
     activeParameterCount: null,
     quantization: "Q4_K_M",
-    artifactSizeBytes: 7086696038, // 6.6 GB exact Ollama tag size
+    sourceDisplaySize: "6.6GB",
+    normalizedApproxSizeGb: 6.6,
+    exactManifestSizeBytes: null,
     contextTokens: 262144, // 256k verified from live Ollama
     capabilities: {
       tools: true,
       vision: true,
-      audio: false,
+      audio: null,
       thinking: true,
+      capabilityBadges: ["Text", "Image"],
     },
     localSupport: true,
     lifecycle: "current",
@@ -563,7 +657,7 @@ export const CURATED_MODEL_DEFINITIONS: ModelEntry[] = [
     estimatedSystemMemoryComfort: {
       valueGb: 10,
       methodology:
-        "Artifact size (~6.6 GB) + KV cache buffer (2.5 GB) + OS headroom, rounded up. Heuristic estimate only.",
+        "Ollama listed (~6.6 GB) + KV cache buffer (2.5 GB) + OS headroom, rounded up. Heuristic estimate only.",
     },
     strengths: ["code", "chat", "summarization", "general"],
     gpuBenefit: true,
@@ -580,20 +674,24 @@ export const CURATED_MODEL_DEFINITIONS: ModelEntry[] = [
     displayName: "Qwen 3.6 27B",
     provider: "Alibaba Qwen",
     ollamaTag: "qwen3.6:27b",
-    ollamaDigest: "1e2b3d172b7c",
+    displayDigest: "1e2b3d172b7c",
+    fullManifestDigest: null,
     ollamaUrl: "https://ollama.com/library/qwen3.6",
     sourceUrl: "https://github.com/QwenLM/Qwen3.6",
     license: "Apache-2.0",
     parameterCount: "27B",
     activeParameterCount: null,
     quantization: "Q4_K_M",
-    artifactSizeBytes: 19327352832, // 18 GB exact Ollama tag size
+    sourceDisplaySize: "18GB",
+    normalizedApproxSizeGb: 18.0,
+    exactManifestSizeBytes: null,
     contextTokens: 262144, // 256k verified
     capabilities: {
       tools: true,
       vision: true,
-      audio: false,
+      audio: null,
       thinking: true,
+      capabilityBadges: ["Text", "Image"],
     },
     localSupport: true,
     lifecycle: "current",
@@ -606,7 +704,7 @@ export const CURATED_MODEL_DEFINITIONS: ModelEntry[] = [
     estimatedSystemMemoryComfort: {
       valueGb: 24,
       methodology:
-        "Artifact size (~18 GB) + KV cache buffer (4.0 GB) + OS headroom, rounded up. Heuristic estimate only.",
+        "Ollama listed (~18 GB) + KV cache buffer (4.0 GB) + OS headroom, rounded up. Heuristic estimate only.",
     },
     strengths: ["code", "chat", "summarization", "general"],
     gpuBenefit: true,
@@ -620,20 +718,24 @@ export const CURATED_MODEL_DEFINITIONS: ModelEntry[] = [
     displayName: "Qwen 3.6 35B",
     provider: "Alibaba Qwen",
     ollamaTag: "qwen3.6:35b",
-    ollamaDigest: "8a43277aac50",
+    displayDigest: "8a43277aac50",
+    fullManifestDigest: null,
     ollamaUrl: "https://ollama.com/library/qwen3.6",
     sourceUrl: "https://github.com/QwenLM/Qwen3.6",
     license: "Apache-2.0",
     parameterCount: "35B",
     activeParameterCount: null,
     quantization: "Q4_K_M",
-    artifactSizeBytes: 24696061952, // 23 GB exact Ollama tag size
+    sourceDisplaySize: "23GB",
+    normalizedApproxSizeGb: 23.0,
+    exactManifestSizeBytes: null,
     contextTokens: 262144, // 256k verified
     capabilities: {
       tools: true,
       vision: true,
-      audio: false,
+      audio: null,
       thinking: true,
+      capabilityBadges: ["Text", "Image"],
     },
     localSupport: true,
     lifecycle: "current",
@@ -646,7 +748,7 @@ export const CURATED_MODEL_DEFINITIONS: ModelEntry[] = [
     estimatedSystemMemoryComfort: {
       valueGb: 30,
       methodology:
-        "Artifact size (~23 GB) + KV cache buffer (5.0 GB) + OS headroom, rounded up. Heuristic estimate only.",
+        "Ollama listed (~23 GB) + KV cache buffer (5.0 GB) + OS headroom, rounded up. Heuristic estimate only.",
     },
     strengths: ["code", "chat", "summarization", "general"],
     gpuBenefit: true,
@@ -663,20 +765,24 @@ export const CURATED_MODEL_DEFINITIONS: ModelEntry[] = [
     displayName: "Qwen 3.8 27B",
     provider: "Alibaba Qwen",
     ollamaTag: "qwen3.8:27b",
-    ollamaDigest: "e118e4d12a70",
+    displayDigest: "e118e4d12a70",
+    fullManifestDigest: null,
     ollamaUrl: "https://ollama.com/library/qwen3.8",
     sourceUrl: "https://github.com/QwenLM/Qwen3.8",
     license: "Apache-2.0",
     parameterCount: "27B",
     activeParameterCount: null,
     quantization: "Q4_K_M",
-    artifactSizeBytes: 19327352832, // 18 GB exact Ollama tag size
+    sourceDisplaySize: "18GB",
+    normalizedApproxSizeGb: 18.0,
+    exactManifestSizeBytes: null,
     contextTokens: 262144, // 256k verified
     capabilities: {
       tools: true,
       vision: true,
-      audio: false,
+      audio: null,
       thinking: true,
+      capabilityBadges: ["Text", "Image"],
     },
     localSupport: true,
     lifecycle: "current",
@@ -689,7 +795,7 @@ export const CURATED_MODEL_DEFINITIONS: ModelEntry[] = [
     estimatedSystemMemoryComfort: {
       valueGb: 24,
       methodology:
-        "Artifact size (~18 GB) + KV cache buffer (4.0 GB) + OS headroom, rounded up. Heuristic estimate only.",
+        "Ollama listed (~18 GB) + KV cache buffer (4.0 GB) + OS headroom, rounded up. Heuristic estimate only.",
     },
     strengths: ["code", "chat", "summarization", "general"],
     gpuBenefit: true,
@@ -706,20 +812,24 @@ export const CURATED_MODEL_DEFINITIONS: ModelEntry[] = [
     displayName: "Qwen 3 8B",
     provider: "Alibaba Qwen",
     ollamaTag: "qwen3:8b",
-    ollamaDigest: "500a1f067a9f",
+    displayDigest: "500a1f067a9f",
+    fullManifestDigest: null,
     ollamaUrl: "https://ollama.com/library/qwen3",
     sourceUrl: "https://github.com/QwenLM/Qwen3",
     license: "Apache-2.0",
     parameterCount: "8B",
     activeParameterCount: null,
     quantization: "Q4_K_M",
-    artifactSizeBytes: 5583457485, // 5.2 GB exact Ollama tag size
+    sourceDisplaySize: "5.2GB",
+    normalizedApproxSizeGb: 5.2,
+    exactManifestSizeBytes: null,
     contextTokens: 40960, // 40K verified from live Ollama
     capabilities: {
       tools: true,
       vision: false,
-      audio: false,
-      thinking: false,
+      audio: null,
+      thinking: null,
+      capabilityBadges: ["Text"],
     },
     localSupport: true,
     lifecycle: "current",
@@ -732,7 +842,7 @@ export const CURATED_MODEL_DEFINITIONS: ModelEntry[] = [
     estimatedSystemMemoryComfort: {
       valueGb: 8,
       methodology:
-        "Artifact size (~5.2 GB) + KV cache buffer (2.0 GB) + OS headroom, rounded up. Heuristic estimate only.",
+        "Ollama listed (~5.2 GB) + KV cache buffer (2.0 GB) + OS headroom, rounded up. Heuristic estimate only.",
     },
     strengths: ["code", "chat", "general"],
     gpuBenefit: true,
@@ -749,20 +859,24 @@ export const CURATED_MODEL_DEFINITIONS: ModelEntry[] = [
     displayName: "GPT-OSS 20B",
     provider: "Open-Weight Community",
     ollamaTag: "gpt-oss:20b",
-    ollamaDigest: "17052f91a42e",
+    displayDigest: "17052f91a42e",
+    fullManifestDigest: null,
     ollamaUrl: "https://ollama.com/library/gpt-oss",
     sourceUrl: "https://github.com/openai/gpt-oss",
     license: "Apache-2.0",
     parameterCount: "21B", // 21B total parameters per OpenAI technical report
     activeParameterCount: "3.6B", // 3.6B active parameters
     quantization: "Q4_K_M",
-    artifactSizeBytes: 15032385536, // 14 GB exact Ollama tag size
+    sourceDisplaySize: "14GB",
+    normalizedApproxSizeGb: 14.0,
+    exactManifestSizeBytes: null,
     contextTokens: 131072, // 128k verified
     capabilities: {
       tools: true,
       vision: false,
-      audio: false,
+      audio: null,
       thinking: true,
+      capabilityBadges: ["Text"],
     },
     localSupport: true,
     lifecycle: "current",
@@ -775,7 +889,7 @@ export const CURATED_MODEL_DEFINITIONS: ModelEntry[] = [
     estimatedSystemMemoryComfort: {
       valueGb: 18,
       methodology:
-        "Artifact size (~14 GB) + KV cache buffer (3.5 GB) + OS headroom, rounded up. Heuristic estimate only.",
+        "Ollama listed (~14 GB) + KV cache buffer (3.5 GB) + OS headroom, rounded up. Heuristic estimate only.",
     },
     strengths: ["code", "summarization", "general"],
     gpuBenefit: true,
@@ -792,20 +906,24 @@ export const CURATED_MODEL_DEFINITIONS: ModelEntry[] = [
     displayName: "Phi-4 Mini",
     provider: "Microsoft",
     ollamaTag: "phi4-mini",
-    ollamaDigest: "78fad5d182a7",
+    displayDigest: "78fad5d182a7",
+    fullManifestDigest: null,
     ollamaUrl: "https://ollama.com/library/phi4-mini",
     sourceUrl: "https://huggingface.co/microsoft/Phi-4-mini-instruct",
     license: "MIT",
     parameterCount: "3.8B",
     activeParameterCount: null,
     quantization: "Q4_K_M",
-    artifactSizeBytes: 2684354560, // 2.5 GB exact Ollama tag size
+    sourceDisplaySize: "2.5GB",
+    normalizedApproxSizeGb: 2.5,
+    exactManifestSizeBytes: null,
     contextTokens: 131072, // 128k verified
     capabilities: {
       tools: true,
       vision: false,
-      audio: false,
-      thinking: false,
+      audio: null,
+      thinking: null,
+      capabilityBadges: ["Text"],
     },
     localSupport: true,
     lifecycle: "current",
@@ -818,7 +936,7 @@ export const CURATED_MODEL_DEFINITIONS: ModelEntry[] = [
     estimatedSystemMemoryComfort: {
       valueGb: 4,
       methodology:
-        "Artifact size (~2.5 GB) + KV cache buffer (1.5 GB) + OS headroom, rounded up. Heuristic estimate only.",
+        "Ollama listed (~2.5 GB) + KV cache buffer (1.5 GB) + OS headroom, rounded up. Heuristic estimate only.",
     },
     strengths: ["code", "general", "chat"],
     gpuBenefit: true,
@@ -835,20 +953,24 @@ export const CURATED_MODEL_DEFINITIONS: ModelEntry[] = [
     displayName: "Nemotron 3 Nano 4B",
     provider: "NVIDIA",
     ollamaTag: "nemotron-3-nano:4b",
-    ollamaDigest: "6cc467f05439",
+    displayDigest: "6cc467f05439",
+    fullManifestDigest: null,
     ollamaUrl: "https://ollama.com/library/nemotron-3-nano",
     sourceUrl: "https://huggingface.co/nvidia/nemotron-3-nano",
     license: "NVIDIA Open Model License",
     parameterCount: "4B",
     activeParameterCount: null,
     quantization: "Q4_K_M",
-    artifactSizeBytes: 3006477107, // 2.8 GB exact Ollama tag size
+    sourceDisplaySize: "2.8GB",
+    normalizedApproxSizeGb: 2.8,
+    exactManifestSizeBytes: null,
     contextTokens: 262144, // 256k verified from live Ollama
     capabilities: {
       tools: true,
       vision: false,
-      audio: false,
-      thinking: false,
+      audio: null,
+      thinking: null,
+      capabilityBadges: ["Text"],
     },
     localSupport: true,
     lifecycle: "current",
@@ -866,7 +988,7 @@ export const CURATED_MODEL_DEFINITIONS: ModelEntry[] = [
     estimatedSystemMemoryComfort: {
       valueGb: 5,
       methodology:
-        "Artifact size (~2.8 GB) + KV cache buffer (1.5 GB) + OS headroom, rounded up. Heuristic estimate only.",
+        "Ollama listed (~2.8 GB) + KV cache buffer (1.5 GB) + OS headroom, rounded up. Heuristic estimate only.",
     },
     strengths: ["code", "chat", "general"],
     gpuBenefit: true,
@@ -883,20 +1005,24 @@ export const CURATED_MODEL_DEFINITIONS: ModelEntry[] = [
     displayName: "Qwen 3 Coder Next",
     provider: "Alibaba Qwen",
     ollamaTag: "qwen3-coder-next:latest",
-    ollamaDigest: "ca06e9e4087c",
+    displayDigest: "ca06e9e4087c",
+    fullManifestDigest: null,
     ollamaUrl: "https://ollama.com/library/qwen3-coder-next",
     sourceUrl: "https://github.com/QwenLM/Qwen3-Coder",
     license: "Apache-2.0",
     parameterCount: "80B", // 80B total parameters
     activeParameterCount: "3B", // 3B active parameters
     quantization: "Q4_K_M",
-    artifactSizeBytes: 55834574848, // 52 GB exact Ollama tag size
+    sourceDisplaySize: "52GB",
+    normalizedApproxSizeGb: 52.0,
+    exactManifestSizeBytes: null,
     contextTokens: 262144, // 256k verified from live Ollama
     capabilities: {
       tools: true,
       vision: false,
-      audio: false,
+      audio: null,
       thinking: true,
+      capabilityBadges: ["Text"],
     },
     localSupport: true,
     lifecycle: "current",
@@ -909,7 +1035,7 @@ export const CURATED_MODEL_DEFINITIONS: ModelEntry[] = [
     estimatedSystemMemoryComfort: {
       valueGb: 60,
       methodology:
-        "Artifact size (~52 GB) + KV cache buffer (6.0 GB) + OS headroom, rounded up. High-memory workstation requirement.",
+        "Ollama listed (~52 GB) + KV cache buffer (6.0 GB) + OS headroom, rounded up. High-memory workstation requirement.",
     },
     strengths: ["code"],
     gpuBenefit: true,
@@ -926,20 +1052,24 @@ export const CURATED_MODEL_DEFINITIONS: ModelEntry[] = [
     displayName: "DeepSeek R1 1.5B",
     provider: "DeepSeek",
     ollamaTag: "deepseek-r1:1.5b",
-    ollamaDigest: "e0979632db5a",
+    displayDigest: "e0979632db5a",
+    fullManifestDigest: null,
     ollamaUrl: "https://ollama.com/library/deepseek-r1",
     sourceUrl: "https://github.com/deepseek-ai/DeepSeek-R1",
     license: "MIT",
     parameterCount: "1.5B",
     activeParameterCount: null,
     quantization: "Q4_K_M",
-    artifactSizeBytes: 1181116006, // 1.1 GB exact Ollama tag size
+    sourceDisplaySize: "1.1GB",
+    normalizedApproxSizeGb: 1.1,
+    exactManifestSizeBytes: null,
     contextTokens: 131072, // 128k verified
     capabilities: {
       tools: false, // Authoritative: Ollama library does NOT tag deepseek-r1 with tools
       vision: false,
-      audio: false,
+      audio: null,
       thinking: true,
+      capabilityBadges: ["Text"],
     },
     localSupport: true,
     lifecycle: "current",
@@ -952,7 +1082,7 @@ export const CURATED_MODEL_DEFINITIONS: ModelEntry[] = [
     estimatedSystemMemoryComfort: {
       valueGb: 3,
       methodology:
-        "Artifact size (~1.1 GB) + KV cache buffer (1.5 GB) + OS headroom, rounded up. Heuristic estimate only.",
+        "Ollama listed (~1.1 GB) + KV cache buffer (1.5 GB) + OS headroom, rounded up. Heuristic estimate only.",
     },
     strengths: ["code", "general"],
     gpuBenefit: false,
@@ -969,20 +1099,24 @@ export const CURATED_MODEL_DEFINITIONS: ModelEntry[] = [
     displayName: "Gemma 3 12B",
     provider: "Google",
     ollamaTag: "gemma3:12b",
-    ollamaDigest: "f4031aab637d",
+    displayDigest: "f4031aab637d",
+    fullManifestDigest: null,
     ollamaUrl: "https://ollama.com/library/gemma3",
     sourceUrl: "https://blog.google/technology/developers/gemma-3",
     license: "Gemma Terms of Use",
     parameterCount: "12B",
     activeParameterCount: null,
     quantization: "Q4_K_M",
-    artifactSizeBytes: 8697308774, // 8.1 GB
+    sourceDisplaySize: "8.1GB",
+    normalizedApproxSizeGb: 8.1,
+    exactManifestSizeBytes: null,
     contextTokens: 131072, // 128k
     capabilities: {
       tools: true,
       vision: true,
-      audio: false,
-      thinking: false,
+      audio: null,
+      thinking: null,
+      capabilityBadges: ["Text", "Image"],
     },
     localSupport: true,
     lifecycle: "legacy", // Superseded by Gemma 4
@@ -1011,20 +1145,24 @@ export const CURATED_MODEL_DEFINITIONS: ModelEntry[] = [
     displayName: "Llama 2 7B (Retired)",
     provider: "Meta",
     ollamaTag: "llama2:7b",
-    ollamaDigest: "78e26419b446", // Exact live digest
+    displayDigest: "78e26419b446", // Exact live digest
+    fullManifestDigest: null,
     ollamaUrl: "https://ollama.com/library/llama2",
     sourceUrl: "https://ai.meta.com/llama/llama-2",
     license: "Llama 2 Community License",
     parameterCount: "7B",
     activeParameterCount: null,
     quantization: "Q4_0",
-    artifactSizeBytes: 4080218931, // 3.8 GB
+    sourceDisplaySize: "3.8GB",
+    normalizedApproxSizeGb: 3.8,
+    exactManifestSizeBytes: null,
     contextTokens: 4096,
     capabilities: {
       tools: false,
       vision: false,
-      audio: false,
-      thinking: false,
+      audio: null,
+      thinking: null,
+      capabilityBadges: ["Text"],
     },
     localSupport: true,
     lifecycle: "retired", // Retired
@@ -1052,20 +1190,24 @@ export const CURATED_MODEL_DEFINITIONS: ModelEntry[] = [
     displayName: "Mistral 7B v0.1 (Stale Metadata)",
     provider: "Mistral AI",
     ollamaTag: "mistral:v0.1",
-    ollamaDigest: "b17615239298",
+    displayDigest: "b17615239298",
+    fullManifestDigest: null,
     ollamaUrl: "https://ollama.com/library/mistral",
     sourceUrl: "https://mistral.ai",
     license: "Apache-2.0",
     parameterCount: "7B",
     activeParameterCount: null,
     quantization: "Q4_K_M",
-    artifactSizeBytes: 4402341478, // 4.1 GB
+    sourceDisplaySize: "4.1GB",
+    normalizedApproxSizeGb: 4.1,
+    exactManifestSizeBytes: null,
     contextTokens: 32768, // 32K
     capabilities: {
       tools: true,
       vision: false,
-      audio: false,
-      thinking: false,
+      audio: null,
+      thinking: null,
+      capabilityBadges: ["Text"],
     },
     localSupport: true,
     lifecycle: "legacy",
@@ -1093,20 +1235,24 @@ export const CURATED_MODEL_DEFINITIONS: ModelEntry[] = [
     displayName: "GLM-4 9B (Unverified Candidate)",
     provider: "Zhipu AI",
     ollamaTag: "glm4:9b",
-    ollamaDigest: "5b699761eca5",
+    displayDigest: "5b699761eca5",
+    fullManifestDigest: null,
     ollamaUrl: "https://ollama.com/library/glm4",
     sourceUrl: "https://github.com/THUDM/GLM-4",
     license: "GLM-4 License",
     parameterCount: "9B",
     activeParameterCount: null,
     quantization: "Q4_0",
-    artifactSizeBytes: 5905580032, // 5.5 GB
+    sourceDisplaySize: "5.5GB",
+    normalizedApproxSizeGb: 5.5,
+    exactManifestSizeBytes: null,
     contextTokens: 131072, // 128K
     capabilities: {
       tools: true,
       vision: false,
-      audio: false,
-      thinking: false,
+      audio: null,
+      thinking: null,
+      capabilityBadges: ["Text"],
     },
     localSupport: true,
     lifecycle: "current",

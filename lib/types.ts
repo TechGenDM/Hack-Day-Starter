@@ -59,14 +59,16 @@ export interface HardwareProfile {
 // ---------------------------------------------------------------------------
 
 export interface ModelCapabilities {
-  /** Model natively supports structured tool / function calling */
-  tools: boolean;
-  /** Model natively accepts image inputs */
-  vision: boolean;
-  /** Model natively accepts direct audio inputs */
-  audio: boolean;
-  /** Model supports native reasoning / chain-of-thought tokens */
-  thinking: boolean;
+  /** Model natively supports structured tool / function calling (null if unverified from primary source) */
+  tools: boolean | null;
+  /** Model natively accepts image inputs (null if unverified from primary source) */
+  vision: boolean | null;
+  /** Model natively accepts direct audio inputs (null if unverified from primary source) */
+  audio: boolean | null;
+  /** Model supports native reasoning / chain-of-thought tokens (null if unverified from primary source) */
+  thinking: boolean | null;
+  /** Raw capability badges exposed directly by Ollama source */
+  capabilityBadges?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -107,12 +109,20 @@ export type SourceObservationType = "live-network" | "regression-fixture";
 
 export interface RawOllamaObservation {
   ollamaTag: string;
-  digest: string | null;
-  displaySize: string; // e.g. "6.6GB", "7.7GB", "3.4GB"
-  sizeBytes: number;
+  /** Short display digest shown on Ollama web pages (e.g. "009acb0d7fe1") */
+  displayDigest: string | null;
+  /** Full sha256:<64 hex> manifest digest (null unless retrieved from raw manifest) */
+  fullManifestDigest: string | null;
+  /** Exact text shown by Ollama (e.g. "6.6GB", "6.6–9.5 GB") */
+  sourceDisplaySize: string;
+  /** Normalized approximate numeric size in GB */
+  normalizedApproxSizeGb: number;
+  /** Exact artifact size in bytes (nullable! null unless retrieved from actual manifest) */
+  exactManifestSizeBytes: number | null;
   displayContext: string; // e.g. "256K", "128K"
   contextTokens: number;
   inputs: string[]; // e.g. ["Text", "Image"]
+  capabilityBadges: string[]; // raw badges exposed by source
   observedAt: string; // ISO 8601 timestamp
   sourceUrl: string;
   sourceType: SourceObservationType;
@@ -159,8 +169,11 @@ export interface ModelEntry {
   /** Exact Ollama library tag used for `ollama pull <tag>` */
   ollamaTag: string;
 
-  /** Exact Ollama manifest digest from primary library */
-  ollamaDigest: string | null;
+  /** Short display digest shown on Ollama webpage (e.g. "009acb0d7fe1") */
+  displayDigest: string | null;
+
+  /** Full sha256:<64 hex> manifest digest (nullable! null unless retrieved from actual manifest) */
+  fullManifestDigest: string | null;
 
   /** Primary source URL on official Ollama library */
   ollamaUrl: string;
@@ -180,8 +193,14 @@ export interface ModelEntry {
   /** Quantization format of the Ollama artifact e.g. "Q4_K_M", "Q4_0" */
   quantization: string;
 
-  /** Exact artifact size in bytes */
-  artifactSizeBytes: number;
+  /** Exact text shown by Ollama (e.g. "6.6GB", "6.6–9.5 GB") */
+  sourceDisplaySize: string;
+
+  /** Normalized approximate size in GB (e.g. 6.6) */
+  normalizedApproxSizeGb: number;
+
+  /** Exact artifact size in bytes (nullable! null unless retrieved from actual manifest) */
+  exactManifestSizeBytes: number | null;
 
   /** Exact context window length in tokens */
   contextTokens: number;

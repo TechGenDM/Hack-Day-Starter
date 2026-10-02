@@ -80,13 +80,47 @@ export function validateModelRegistry(
       });
     }
 
-    // 2. Exact artifact size in bytes
-    if (typeof model.artifactSizeBytes !== "number" || model.artifactSizeBytes <= 0) {
+    // 2. Artifact size specification
+    if (!model.sourceDisplaySize || model.sourceDisplaySize.trim() === "") {
       issues.push({
         modelId: model.id,
-        field: "artifactSizeBytes",
-        message: "Model must specify exact positive integer artifactSizeBytes.",
+        field: "sourceDisplaySize",
+        message: "Model must specify exact sourceDisplaySize text as shown by Ollama.",
         severity: "error",
+      });
+    }
+
+    if (typeof model.normalizedApproxSizeGb !== "number" || model.normalizedApproxSizeGb <= 0) {
+      issues.push({
+        modelId: model.id,
+        field: "normalizedApproxSizeGb",
+        message: "Model must specify positive numeric normalizedApproxSizeGb.",
+        severity: "error",
+      });
+    }
+
+    if (model.exactManifestSizeBytes !== null && model.exactManifestSizeBytes <= 0) {
+      issues.push({
+        modelId: model.id,
+        field: "exactManifestSizeBytes",
+        message: "Exact manifest size in bytes must be positive when provided.",
+        severity: "error",
+      });
+    } else if (model.exactManifestSizeBytes === null) {
+      unverifiedFields.push({
+        modelId: model.id,
+        ollamaTag: model.ollamaTag,
+        field: "exactManifestSizeBytes",
+        reason: "Web source exposes rounded display size; exact manifest byte count omitted rather than guessed.",
+      });
+    }
+
+    if (model.fullManifestDigest === null) {
+      unverifiedFields.push({
+        modelId: model.id,
+        ollamaTag: model.ollamaTag,
+        field: "fullManifestDigest",
+        reason: "Web source exposes short displayDigest (12 hex); full sha256:64hex hash omitted rather than guessed.",
       });
     }
 

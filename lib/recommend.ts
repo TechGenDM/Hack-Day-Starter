@@ -21,7 +21,11 @@
  */
 
 import { getEligibleLocalModels } from "./registry";
-import { formatBytesToGb, getModelMemoryReport } from "./memory-calculator";
+import {
+  getModelMemoryReport,
+  getModelApproxSizeGb,
+  formatModelDisplaySize,
+} from "./memory-calculator";
 import {
   CompatibilityLevel,
   HardwareProfile,
@@ -55,7 +59,7 @@ export function canModelRun(
   }
 
   // 2. Storage Check (Artifact Size + Heuristic Safety Buffer)
-  const artifactSizeGb = model.artifactSizeBytes / (1024 * 1024 * 1024);
+  const artifactSizeGb = getModelApproxSizeGb(model);
   const requiredDiskGb = artifactSizeGb + RECOMMENDED_DISK_BUFFER_GB;
   if (profile.freeDiskSpaceGb < requiredDiskGb) {
     return {
@@ -67,7 +71,7 @@ export function canModelRun(
   // 3. User Required Capabilities Check
   if (profile.requiredCapabilities) {
     for (const [key, reqVal] of Object.entries(profile.requiredCapabilities)) {
-      if (reqVal === true && !model.capabilities[key as keyof typeof model.capabilities]) {
+      if (reqVal === true && model.capabilities[key as keyof typeof model.capabilities] !== true) {
         return {
           eligible: false,
           reason: `Model lacks required capability: ${key}`,
@@ -101,7 +105,7 @@ export function scoreModel(
   profile: HardwareProfile
 ): number {
   let score = 0;
-  const artifactSizeGb = model.artifactSizeBytes / (1024 * 1024 * 1024);
+  const artifactSizeGb = getModelApproxSizeGb(model);
   const memoryReport = getModelMemoryReport(model);
 
   // --- 1. Use-case Relevance (0 or 40 pts) ---
@@ -122,7 +126,7 @@ export function scoreModel(
   // --- 3. Model Capacity Bonus (0–15 pts) ---
   // Parameter count alone must NOT be treated as capability because MoE models
   // have large total parameter counts but fewer active parameters.
-  // We use activeParameterCount when present (e.g. 4B active for GPT-OSS 20B).
+  // We use activeParameterCount when present (e.g. 3.6B active for GPT-OSS 20B).
   // Furthermore, capacity bonus ONLY applies when hardware has >= 16 GB RAM and ample headroom.
   if (profile.ramGb >= 16 && headroom >= 2) {
     const effectiveParamsStr = model.activeParameterCount ?? model.parameterCount;
@@ -148,7 +152,7 @@ export function scoreModel(
   }
 
   // --- 5. Tool-calling Capability Bonus (0 or 10 pts) ---
-  if (model.capabilities.tools) {
+  if (model.capabilities.tools === true) {
     score += 10;
   }
 
@@ -190,8 +194,8 @@ export function buildExplanation(
   compatibility: CompatibilityLevel
 ): string {
   const parts: string[] = [];
-  const artifactSizeGb = model.artifactSizeBytes / (1024 * 1024 * 1024);
-  const formattedSize = formatBytesToGb(model.artifactSizeBytes);
+  const artifactSizeGb = getModelApproxSizeGb(model);
+  const formattedSize = formatModelDisplaySize(model);
 
   // Hardware context
   const hwDescription =
@@ -202,7 +206,7 @@ export function buildExplanation(
       : `system with ${profile.ramGb} GB RAM (CPU-only)`;
 
   parts.push(
-    `Recommended because your ${hwDescription} fits the exact ~${formattedSize} Ollama artifact`
+    `Recommended because your ${hwDescription} fits the ${formattedSize}`
   );
 
   // Free disk space context
@@ -213,7 +217,7 @@ export function buildExplanation(
 
   // Use case & capability context
   if (model.strengths.includes(profile.useCase)) {
-    if (model.capabilities.tools) {
+    if (model.capabilities.tools === true) {
       parts.push(
         `supports your selected ${profile.useCase} use case with verified tool calling`
       );
@@ -255,7 +259,7 @@ export function recommendModels(
       model,
       compatibilityLevel: compatibility,
       explanation: buildExplanation(model, profile, compatibility),
-      formattedArtifactSize: formatBytesToGb(model.artifactSizeBytes),
+      formattedArtifactSize: formatModelDisplaySize(model),
       recommendedDiskBufferGb: RECOMMENDED_DISK_BUFFER_GB,
       memory: {
         officialInference: model.officialInferenceMemory,

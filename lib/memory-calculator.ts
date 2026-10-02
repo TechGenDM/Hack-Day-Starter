@@ -32,6 +32,28 @@ export interface MemoryReport {
 }
 
 /**
+ * Formats a model's size adhering strictly to factual precision:
+ * - "Manifest size: X GB" when exactManifestSizeBytes is known
+ * - "Ollama listed: <text>" when relying on official Ollama listed size/range
+ */
+export function formatModelDisplaySize(model: ModelEntry): string {
+  if (model.exactManifestSizeBytes !== null && model.exactManifestSizeBytes > 0) {
+    return `Manifest size: ${(model.exactManifestSizeBytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+  }
+  return `Ollama listed: ${model.sourceDisplaySize}`;
+}
+
+/**
+ * Returns the best available numeric approximate size in GB for hardware gating calculations.
+ */
+export function getModelApproxSizeGb(model: ModelEntry): number {
+  if (model.exactManifestSizeBytes !== null && model.exactManifestSizeBytes > 0) {
+    return model.exactManifestSizeBytes / (1024 * 1024 * 1024);
+  }
+  return model.normalizedApproxSizeGb;
+}
+
+/**
  * Formats raw integer bytes into a standard human-readable GB string.
  * Example: 8376182579 bytes → "7.80 GB"
  */
@@ -47,13 +69,12 @@ export function getModelMemoryReport(model: ModelEntry): MemoryReport {
   const hasOfficialSystem = model.officialSystemMemoryGuidance !== null;
   const hasOfficialInference = model.officialInferenceMemory !== null;
 
+  const approxSizeGb = getModelApproxSizeGb(model);
+
   // Calculate or retrieve estimated comfort
   const estimatedComfortGb =
     model.estimatedSystemMemoryComfort?.valueGb ??
-    Math.ceil(
-      model.artifactSizeBytes / (1024 * 1024 * 1024) +
-        (model.artifactSizeBytes > 10 * 1024 * 1024 * 1024 ? 4 : 2.5)
-    );
+    Math.ceil(approxSizeGb + (approxSizeGb > 10 ? 4 : 2.5));
 
   const estimatedMethodology =
     model.estimatedSystemMemoryComfort?.methodology ??

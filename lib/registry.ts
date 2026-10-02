@@ -1,12 +1,17 @@
 /**
  * Verified Model Registry for Hack Day Starter.
  *
- * Requirements (Phase 2 Rework):
- * - Built from the authoritative Ollama discovery & sync layer (`lib/sources/ollama.ts`).
- * - Contains exact artifact metadata (bytes, tags, quantization, contextTokens, digests).
- * - Distinguishes lifecycle ('current', 'legacy', 'retired') and verificationStatus ('verified', 'source-discrepancy', 'unverified', 'metadata-stale').
- * - Distinguishes 'observed from live source' vs 'verified against source snapshot'.
- * - Single source of truth for catalog version and verification date.
+ * Architecture:
+ *   LIVE ECOSYSTEM DISCOVERY
+ *             ↓
+ *   PRACTICAL CANDIDATE SELECTION
+ *             ↓
+ *   SOURCE VERIFICATION
+ *             ↓
+ *   RECOMMENDATION
+ *
+ * Note: The candidate models represent a curated practical set evaluated for
+ * local laptop execution, not the entire unbounded Ollama library catalog.
  */
 
 import { CURATED_MODEL_DEFINITIONS } from "./sources/ollama";

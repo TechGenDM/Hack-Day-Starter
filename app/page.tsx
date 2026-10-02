@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { REGISTRY_METADATA } from "@/lib/registry";
-import { formatBytesToGb, getModelMemoryReport } from "@/lib/memory-calculator";
+import { formatModelDisplaySize, getModelMemoryReport } from "@/lib/memory-calculator";
 import { RECOMMENDED_DISK_BUFFER_GB } from "@/lib/recommend";
 import type {
   GpuType,
@@ -482,7 +482,7 @@ export default function HomePage() {
             {results.map((rec, i) => {
               const memReport = getModelMemoryReport(rec.model);
               const isSelected = selectedModel?.id === rec.model.id;
-              const formattedSize = formatBytesToGb(rec.model.artifactSizeBytes);
+              const formattedSize = rec.formattedArtifactSize;
 
               return (
                 <article
@@ -552,7 +552,10 @@ export default function HomePage() {
                         <span>✓ Verified Fact</span>
                       </div>
                       <div className="text-neutral-300">
-                        📦 Exact Artifact: <strong>~{formattedSize}</strong> ({rec.model.artifactSizeBytes.toLocaleString()} bytes)
+                        📦 <strong>{formattedSize}</strong>
+                        {rec.model.exactManifestSizeBytes !== null && (
+                          <span className="text-neutral-400"> ({rec.model.exactManifestSizeBytes.toLocaleString()} bytes)</span>
+                        )}
                       </div>
                       <div className="text-neutral-300">
                         🧠 Context: <strong>{(rec.model.contextTokens / 1024).toFixed(0)}k tokens</strong> ({rec.model.contextTokens.toLocaleString()})
@@ -711,9 +714,11 @@ export default function HomePage() {
               </code>
             </div>
             <div>
-              <span className="text-neutral-500 block">Exact Artifact Size</span>
+              <span className="text-neutral-500 block">
+                {selectedModel.exactManifestSizeBytes !== null ? "Manifest Size" : "Ollama Listed Size"}
+              </span>
               <span className="text-neutral-200 font-semibold">
-                {formatBytesToGb(selectedModel.artifactSizeBytes)}
+                {formatModelDisplaySize(selectedModel)}
               </span>
             </div>
             <div>
