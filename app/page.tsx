@@ -1,21 +1,25 @@
 "use client";
 
 import { useState } from "react";
+import { REGISTRY_METADATA } from "@/lib/registry";
+import { getModelMemoryInfo } from "@/lib/memory-calculator";
 import type {
   GpuType,
   OperatingSystem,
   UseCase,
   Recommendation,
+  ModelEntry,
+  StarterType,
 } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
-// Option definitions (used to render selects and labels)
+// Hardware options and presets
 // ---------------------------------------------------------------------------
 
 const GPU_OPTIONS: { value: GpuType; label: string }[] = [
   { value: "apple-silicon", label: "Apple Silicon (M1/M2/M3/M4)" },
-  { value: "nvidia", label: "NVIDIA GPU" },
-  { value: "none", label: "No GPU / Integrated" },
+  { value: "nvidia", label: "NVIDIA GPU (CUDA)" },
+  { value: "none", label: "No GPU / Integrated Graphics" },
 ];
 
 const OS_OPTIONS: { value: OperatingSystem; label: string }[] = [
@@ -24,94 +28,140 @@ const OS_OPTIONS: { value: OperatingSystem; label: string }[] = [
   { value: "windows", label: "Windows" },
 ];
 
-const USE_CASE_OPTIONS: { value: UseCase; label: string }[] = [
-  { value: "code", label: "Code generation & assistance" },
-  { value: "chat", label: "Chat & conversation" },
-  { value: "summarization", label: "Summarization & writing" },
-  { value: "general", label: "General purpose" },
+const USE_CASE_OPTIONS: { value: UseCase; label: string; desc: string }[] = [
+  {
+    value: "code",
+    label: "Code generation & assistance",
+    desc: "Coding tasks, function synthesis, and debugging",
+  },
+  {
+    value: "chat",
+    label: "Chat & conversation",
+    desc: "Interactive assistant and natural dialogue",
+  },
+  {
+    value: "summarization",
+    label: "Summarization & writing",
+    desc: "Long-form reading, document condensing, and drafting",
+  },
+  {
+    value: "general",
+    label: "General purpose",
+    desc: "Versatile reasoning across diverse hack day ideas",
+  },
 ];
 
-const RAM_PRESETS = [8, 16, 32, 64];
+const RAM_PRESETS = [8, 16, 24, 32, 64];
+const DISK_PRESETS = [10, 25, 50, 100];
 
 // ---------------------------------------------------------------------------
-// Compatibility badge colour mapping
+// Compatibility badge styling
 // ---------------------------------------------------------------------------
 
 const COMPAT_STYLES: Record<string, string> = {
   excellent:
-    "bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/30",
-  good: "bg-sky-500/15 text-sky-400 ring-1 ring-sky-500/30",
+    "bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/30",
+  good: "bg-sky-500/15 text-sky-300 ring-1 ring-sky-500/30",
   marginal:
-    "bg-amber-500/15 text-amber-400 ring-1 ring-amber-500/30",
+    "bg-amber-500/15 text-amber-300 ring-1 ring-amber-500/30",
 };
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
-
 export default function HomePage() {
-  // Form state
-  const [ramGb, setRamGb] = useState<number>(16);
+  // Hardware form state
+  const [ramGb, setRamGb] = useState<number>(24);
   const [gpu, setGpu] = useState<GpuType>("apple-silicon");
   const [os, setOs] = useState<OperatingSystem>("macos");
+  const [freeDiskSpaceGb, setFreeDiskSpaceGb] = useState<number>(50);
   const [useCase, setUseCase] = useState<UseCase>("code");
 
-  // Results state
+  // Recommendation & selection state
   const [results, setResults] = useState<Recommendation[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedModel, setSelectedModel] = useState<ModelEntry | null>(null);
+  const [selectedStarter, setSelectedStarter] = useState<StarterType | null>(null);
+  const [copiedTag, setCopiedTag] = useState<string | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError(null);
     setResults(null);
+    setSelectedModel(null);
+    setSelectedStarter(null);
 
     try {
       const res = await fetch("/api/recommend", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ramGb, gpu, os, useCase }),
+        body: JSON.stringify({ ramGb, gpu, os, freeDiskSpaceGb, useCase }),
       });
 
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.error ?? "Something went wrong");
+        throw new Error(data.error ?? "Failed to fetch recommendations");
       }
 
       const data = await res.json();
       setResults(data.recommendations);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
+      setError(err instanceof Error ? err.message : "Unknown error occurred");
     } finally {
       setLoading(false);
     }
   }
 
+  function handleCopy(tag: string) {
+    navigator.clipboard.writeText(`ollama pull ${tag}`);
+    setCopiedTag(tag);
+    setTimeout(() => setCopiedTag(null), 2000);
+  }
+
+  function handleSelectModel(model: ModelEntry) {
+    setSelectedModel(model);
+    setSelectedStarter(null);
+    setTimeout(() => {
+      document
+        .getElementById("selected-model-section")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 100);
+  }
+
   return (
-    <main className="flex-1 flex flex-col items-center px-4 py-12 sm:py-20">
+    <main className="flex-1 flex flex-col items-center px-4 py-10 sm:py-16 max-w-4xl mx-auto w-full">
       {/* ---------------------------------------------------------------- */}
-      {/* Hero */}
+      {/* Hero Header with Verified Catalog Badge */}
       {/* ---------------------------------------------------------------- */}
-      <div className="text-center max-w-2xl mb-12">
-        <div className="inline-flex items-center gap-2 mb-6 px-4 py-1.5 rounded-full bg-white/[0.06] ring-1 ring-white/10 text-sm text-neutral-400">
+      <div className="text-center max-w-2xl mb-10">
+        <div className="inline-flex flex-wrap items-center justify-center gap-2 mb-5 px-4 py-1.5 rounded-full bg-white/[0.05] ring-1 ring-white/10 text-xs text-neutral-300">
           <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          Hacktoberfest 2026
+          <span>Model catalog verified:</span>
+          <span className="font-semibold text-emerald-400">
+            {REGISTRY_METADATA.verifiedDisplayDate}
+          </span>
+          <span className="text-neutral-500">•</span>
+          <a
+            href={REGISTRY_METADATA.sourceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-neutral-400 hover:text-neutral-200 underline decoration-neutral-600 underline-offset-2"
+          >
+            Official Ollama Library ↗
+          </a>
         </div>
 
-        <h1 className="text-4xl sm:text-5xl font-bold tracking-tight bg-gradient-to-br from-white via-neutral-200 to-neutral-500 bg-clip-text text-transparent">
+        <h1 className="text-3xl sm:text-5xl font-bold tracking-tight bg-gradient-to-br from-white via-neutral-100 to-neutral-400 bg-clip-text text-transparent">
           Hack Day Starter
         </h1>
 
-        <p className="mt-4 text-lg text-neutral-400 leading-relaxed">
-          Stop wasting the first hours of your hack day. Tell us about your
-          laptop and we&apos;ll recommend the best local open-weight model to
-          run with{" "}
+        <p className="mt-4 text-base sm:text-lg text-neutral-400 leading-relaxed">
+          Skip hours of guesswork. Tell us your laptop specs to get vetted,
+          realistic local model recommendations for{" "}
           <a
             href="https://ollama.com"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-emerald-400 hover:underline"
+            className="text-emerald-400 hover:underline font-medium"
           >
             Ollama
           </a>
@@ -120,22 +170,32 @@ export default function HomePage() {
       </div>
 
       {/* ---------------------------------------------------------------- */}
-      {/* Hardware Form */}
+      {/* Hardware Profile Form */}
       {/* ---------------------------------------------------------------- */}
       <form
         onSubmit={handleSubmit}
-        className="w-full max-w-xl space-y-6 bg-white/[0.03] ring-1 ring-white/10 rounded-2xl p-6 sm:p-8 backdrop-blur-sm"
+        className="w-full space-y-6 bg-white/[0.03] ring-1 ring-white/10 rounded-2xl p-6 sm:p-8 backdrop-blur-md shadow-xl"
       >
-        <h2 className="text-lg font-semibold text-neutral-200">
-          Your hardware
-        </h2>
+        <div className="border-b border-white/10 pb-4">
+          <h2 className="text-lg font-semibold text-neutral-100">
+            Your Hardware Profile
+          </h2>
+          <p className="text-xs text-neutral-400 mt-1">
+            Deterministic scoring based on your system RAM, GPU acceleration, and free disk space.
+          </p>
+        </div>
 
-        {/* RAM */}
+        {/* RAM Section */}
         <fieldset>
-          <legend className="text-sm font-medium text-neutral-400 mb-2">
-            RAM (GB)
-          </legend>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex items-baseline justify-between mb-2">
+            <legend className="text-sm font-medium text-neutral-300">
+              System RAM (GB)
+            </legend>
+            <span className="text-xs text-neutral-500">
+              Selected: <strong className="text-neutral-300">{ramGb} GB</strong>
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
             {RAM_PRESETS.map((val) => (
               <button
                 key={val}
@@ -144,90 +204,140 @@ export default function HomePage() {
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-150
                   ${
                     ramGb === val
-                      ? "bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/40"
+                      ? "bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/50 shadow-sm"
                       : "bg-white/[0.04] text-neutral-400 ring-1 ring-white/10 hover:bg-white/[0.08]"
                   }`}
               >
                 {val} GB
               </button>
             ))}
-            {/* Custom input for non-preset values */}
-            <input
-              type="number"
-              min={1}
-              max={512}
-              value={RAM_PRESETS.includes(ramGb) ? "" : ramGb}
-              placeholder="Other"
-              onChange={(e) => {
-                const v = parseInt(e.target.value, 10);
-                if (!isNaN(v) && v > 0) setRamGb(v);
-              }}
-              className="w-24 px-3 py-2 rounded-lg text-sm bg-white/[0.04] text-neutral-300 ring-1 ring-white/10 placeholder:text-neutral-600 focus:outline-none focus:ring-emerald-500/50"
-            />
+            <div className="flex items-center gap-1.5 ml-auto">
+              <span className="text-xs text-neutral-500">Custom:</span>
+              <input
+                type="number"
+                min={2}
+                max={512}
+                value={RAM_PRESETS.includes(ramGb) ? "" : ramGb}
+                placeholder="GB"
+                onChange={(e) => {
+                  const v = parseInt(e.target.value, 10);
+                  if (!isNaN(v) && v > 0) setRamGb(v);
+                }}
+                className="w-20 px-3 py-1.5 rounded-lg text-sm bg-white/[0.04] text-neutral-200 ring-1 ring-white/10 placeholder:text-neutral-600 focus:outline-none focus:ring-emerald-500/50"
+              />
+            </div>
           </div>
         </fieldset>
 
-        {/* GPU */}
-        <div>
-          <label
-            htmlFor="gpu-select"
-            className="block text-sm font-medium text-neutral-400 mb-2"
-          >
-            GPU
-          </label>
-          <select
-            id="gpu-select"
-            value={gpu}
-            onChange={(e) => setGpu(e.target.value as GpuType)}
-            className="w-full px-4 py-2.5 rounded-lg bg-white/[0.04] text-neutral-300 ring-1 ring-white/10 focus:outline-none focus:ring-emerald-500/50 appearance-none cursor-pointer"
-          >
-            {GPU_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
+        {/* Free Disk Space Section */}
+        <fieldset>
+          <div className="flex items-baseline justify-between mb-2">
+            <legend className="text-sm font-medium text-neutral-300">
+              Free Disk Space (GB)
+            </legend>
+            <span className="text-xs text-neutral-500">
+              Selected: <strong className="text-neutral-300">{freeDiskSpaceGb} GB</strong> available
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {DISK_PRESETS.map((val) => (
+              <button
+                key={val}
+                type="button"
+                onClick={() => setFreeDiskSpaceGb(val)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-150
+                  ${
+                    freeDiskSpaceGb === val
+                      ? "bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/50 shadow-sm"
+                      : "bg-white/[0.04] text-neutral-400 ring-1 ring-white/10 hover:bg-white/[0.08]"
+                  }`}
+              >
+                {val} GB
+              </button>
             ))}
-          </select>
-        </div>
+            <div className="flex items-center gap-1.5 ml-auto">
+              <span className="text-xs text-neutral-500">Custom:</span>
+              <input
+                type="number"
+                min={1}
+                max={4000}
+                value={DISK_PRESETS.includes(freeDiskSpaceGb) ? "" : freeDiskSpaceGb}
+                placeholder="GB"
+                onChange={(e) => {
+                  const v = parseInt(e.target.value, 10);
+                  if (!isNaN(v) && v > 0) setFreeDiskSpaceGb(v);
+                }}
+                className="w-20 px-3 py-1.5 rounded-lg text-sm bg-white/[0.04] text-neutral-200 ring-1 ring-white/10 placeholder:text-neutral-600 focus:outline-none focus:ring-emerald-500/50"
+              />
+            </div>
+          </div>
+          <p className="text-xs text-neutral-500 mt-1.5">
+            Use your available free storage, not total SSD size. Ollama requires disk space to unpack model weights.
+          </p>
+        </fieldset>
 
-        {/* OS */}
-        <div>
-          <label
-            htmlFor="os-select"
-            className="block text-sm font-medium text-neutral-400 mb-2"
-          >
-            Operating System
-          </label>
-          <select
-            id="os-select"
-            value={os}
-            onChange={(e) => setOs(e.target.value as OperatingSystem)}
-            className="w-full px-4 py-2.5 rounded-lg bg-white/[0.04] text-neutral-300 ring-1 ring-white/10 focus:outline-none focus:ring-emerald-500/50 appearance-none cursor-pointer"
-          >
-            {OS_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
+        {/* GPU and OS Row */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label
+              htmlFor="gpu-select"
+              className="block text-sm font-medium text-neutral-300 mb-2"
+            >
+              Processor / GPU
+            </label>
+            <select
+              id="gpu-select"
+              value={gpu}
+              onChange={(e) => setGpu(e.target.value as GpuType)}
+              className="w-full px-4 py-2.5 rounded-lg bg-neutral-900/90 text-neutral-200 ring-1 ring-white/15 focus:outline-none focus:ring-emerald-500/50 cursor-pointer text-sm"
+            >
+              {GPU_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label
+              htmlFor="os-select"
+              className="block text-sm font-medium text-neutral-300 mb-2"
+            >
+              Operating System
+            </label>
+            <select
+              id="os-select"
+              value={os}
+              onChange={(e) => setOs(e.target.value as OperatingSystem)}
+              className="w-full px-4 py-2.5 rounded-lg bg-neutral-900/90 text-neutral-200 ring-1 ring-white/15 focus:outline-none focus:ring-emerald-500/50 cursor-pointer text-sm"
+            >
+              {OS_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {/* Use Case */}
         <div>
           <label
             htmlFor="usecase-select"
-            className="block text-sm font-medium text-neutral-400 mb-2"
+            className="block text-sm font-medium text-neutral-300 mb-2"
           >
-            Primary use case
+            Primary Hack Day Use Case
           </label>
           <select
             id="usecase-select"
             value={useCase}
             onChange={(e) => setUseCase(e.target.value as UseCase)}
-            className="w-full px-4 py-2.5 rounded-lg bg-white/[0.04] text-neutral-300 ring-1 ring-white/10 focus:outline-none focus:ring-emerald-500/50 appearance-none cursor-pointer"
+            className="w-full px-4 py-2.5 rounded-lg bg-neutral-900/90 text-neutral-200 ring-1 ring-white/15 focus:outline-none focus:ring-emerald-500/50 cursor-pointer text-sm"
           >
             {USE_CASE_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>
-                {o.label}
+                {o.label} — {o.desc}
               </option>
             ))}
           </select>
@@ -237,111 +347,367 @@ export default function HomePage() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full py-3 rounded-xl font-semibold text-sm transition-all duration-200
-            bg-gradient-to-r from-emerald-600 to-teal-600 text-white
-            hover:from-emerald-500 hover:to-teal-500
-            active:scale-[0.98]
+          className="w-full py-3.5 rounded-xl font-semibold text-sm transition-all duration-200
+            bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-lg shadow-emerald-950/40
+            hover:from-emerald-500 hover:to-teal-500 hover:shadow-emerald-900/50
+            active:scale-[0.99]
             disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {loading ? "Finding models…" : "Recommend models"}
+          {loading ? "Analyzing Verified Registry…" : "Get Verified Model Recommendations"}
         </button>
       </form>
 
-      {/* ---------------------------------------------------------------- */}
-      {/* Error */}
-      {/* ---------------------------------------------------------------- */}
+      {/* Error Display */}
       {error && (
-        <div className="mt-8 w-full max-w-xl px-4 py-3 rounded-xl bg-red-500/10 ring-1 ring-red-500/30 text-red-400 text-sm">
+        <div className="mt-8 w-full px-4 py-3 rounded-xl bg-red-500/10 ring-1 ring-red-500/30 text-red-300 text-sm">
           {error}
         </div>
       )}
 
       {/* ---------------------------------------------------------------- */}
-      {/* Results */}
+      {/* Recommendation Results List */}
       {/* ---------------------------------------------------------------- */}
       {results && results.length > 0 && (
-        <section className="mt-12 w-full max-w-xl space-y-4">
-          <h2 className="text-lg font-semibold text-neutral-200">
-            Recommended models
-          </h2>
+        <section className="mt-12 w-full space-y-6">
+          <div className="flex items-baseline justify-between border-b border-white/10 pb-3">
+            <h2 className="text-xl font-bold text-neutral-100">
+              Verified Recommendations ({results.length})
+            </h2>
+            <span className="text-xs text-neutral-400">
+              Ranked by hardware fit, free disk space & use case
+            </span>
+          </div>
 
-          {results.map((rec, i) => (
-            <article
-              key={rec.model.ollamaTag}
-              className="relative bg-white/[0.03] ring-1 ring-white/10 rounded-2xl p-6 space-y-3 transition-all hover:ring-white/20"
-            >
-              {/* Rank badge */}
-              <span className="absolute -top-3 -left-3 w-7 h-7 flex items-center justify-center rounded-full bg-neutral-800 ring-1 ring-white/10 text-xs font-bold text-neutral-300">
-                {i + 1}
-              </span>
+          <div className="space-y-4">
+            {results.map((rec, i) => {
+              const memInfo = getModelMemoryInfo(rec.model);
+              const isSelected = selectedModel?.id === rec.model.id;
 
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h3 className="text-base font-semibold text-neutral-100">
-                    {rec.model.name}
-                  </h3>
-                  <p className="text-sm text-neutral-500 font-mono mt-0.5">
-                    ollama pull {rec.model.ollamaTag}
-                  </p>
-                </div>
-                <span
-                  className={`shrink-0 px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                    COMPAT_STYLES[rec.compatibilityLevel]
-                  }`}
+              return (
+                <article
+                  key={rec.model.id}
+                  className={`relative rounded-2xl p-6 transition-all duration-200 backdrop-blur-sm
+                    ${
+                      isSelected
+                        ? "bg-emerald-950/20 ring-2 ring-emerald-500/60 shadow-lg"
+                        : "bg-white/[0.03] ring-1 ring-white/10 hover:ring-white/20"
+                    }`}
                 >
-                  {rec.compatibilityLevel}
-                </span>
-              </div>
+                  {/* Rank badge */}
+                  <span className="absolute -top-3 -left-3 w-7 h-7 flex items-center justify-center rounded-full bg-neutral-800 ring-1 ring-white/20 text-xs font-bold text-neutral-200 shadow">
+                    #{i + 1}
+                  </span>
 
-              <p className="text-sm text-neutral-400 leading-relaxed">
-                {rec.model.description}
-              </p>
+                  {/* Header Row */}
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-lg font-bold text-neutral-100">
+                          {rec.model.displayName}
+                        </h3>
+                        <span className="text-xs px-2 py-0.5 rounded bg-white/[0.06] text-neutral-400 font-medium">
+                          {rec.model.provider}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 mt-1">
+                        <code className="text-xs text-neutral-300 font-mono bg-black/40 px-2 py-0.5 rounded border border-white/5">
+                          ollama pull {rec.model.ollamaTag}
+                        </code>
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(rec.model.ollamaTag)}
+                          className="text-xs text-neutral-400 hover:text-neutral-200 transition-colors"
+                          title="Copy command"
+                        >
+                          {copiedTag === rec.model.ollamaTag ? "✓ Copied" : "Copy"}
+                        </button>
+                      </div>
+                    </div>
 
-              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-neutral-500">
-                <span>📦 ~{rec.model.sizeGb} GB</span>
-                <span>🧠 ~{rec.model.ramRequired} GB RAM needed</span>
-              </div>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`shrink-0 px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wider ${
+                          COMPAT_STYLES[rec.compatibilityLevel]
+                        }`}
+                      >
+                        {rec.compatibilityLevel}
+                      </span>
+                    </div>
+                  </div>
 
-              <p className="text-sm text-neutral-400 italic border-t border-white/5 pt-3">
-                {rec.explanation}
-              </p>
-            </article>
-          ))}
+                  {/* Description */}
+                  <p className="text-sm text-neutral-300 leading-relaxed mt-3">
+                    {rec.model.description}
+                  </p>
 
-          {/* Quick-start hint */}
-          <div className="mt-6 px-4 py-3 rounded-xl bg-white/[0.03] ring-1 ring-white/10 text-sm text-neutral-500">
-            <span className="text-neutral-300 font-medium">Quick start:</span>{" "}
-            Install{" "}
-            <a
-              href="https://ollama.com/download"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-emerald-400 hover:underline"
-            >
-              Ollama
-            </a>
-            , then run the{" "}
-            <code className="text-neutral-400 bg-white/[0.06] px-1.5 py-0.5 rounded">
-              ollama pull
-            </code>{" "}
-            command above.
+                  {/* Specs & Memory Guidance */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 text-xs">
+                    <div className="space-y-1">
+                      <div className="text-neutral-400">
+                        📦 Artifact: <strong className="text-neutral-200">~{rec.model.artifactSizeGb} GB</strong>
+                        {" • "}Context: <strong className="text-neutral-200">{(rec.model.contextWindow / 1024).toFixed(0)}k tokens</strong>
+                      </div>
+                      <div className="text-neutral-400">
+                        📜 License: <span className="text-neutral-300">{rec.model.license}</span>
+                        {" • "}Params: <span className="text-neutral-300">{rec.model.parameterCount}</span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-1.5">
+                        {memInfo.isOfficial ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-sky-500/10 text-sky-300 ring-1 ring-sky-500/30 font-medium">
+                            ✓ {memInfo.displayLabel}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 ring-1 ring-amber-500/30 font-medium">
+                            ℹ️ {memInfo.displayLabel} (estimate)
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-neutral-500">
+                        {memInfo.isOfficial
+                          ? "Source: Official provider specification"
+                          : "Estimated heuristic (weights + runtime buffer; not official requirement)"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Capabilities Badges */}
+                  <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-white/5">
+                    <span className="text-xs text-neutral-500 font-medium">Capabilities:</span>
+                    <span
+                      className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${
+                        rec.model.capabilities.tools
+                          ? "bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/30"
+                          : "bg-white/[0.05] text-neutral-500"
+                      }`}
+                    >
+                      {rec.model.capabilities.tools ? "✓ Tool-calling" : "✕ No tools"}
+                    </span>
+                    <span
+                      className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${
+                        rec.model.capabilities.vision
+                          ? "bg-purple-500/15 text-purple-300 ring-1 ring-purple-500/30"
+                          : "bg-white/[0.05] text-neutral-500"
+                      }`}
+                    >
+                      {rec.model.capabilities.vision ? "✓ Vision" : "✕ No vision"}
+                    </span>
+                    {rec.model.capabilities.thinking && (
+                      <span className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-indigo-500/15 text-indigo-300 ring-1 ring-indigo-500/30">
+                        🧠 Thinking
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Honest Rationale */}
+                  <div className="bg-black/30 rounded-xl p-3 border border-white/5 text-xs text-neutral-300 italic">
+                    💡 {rec.explanation}
+                  </div>
+
+                  {/* Sources & Action */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                    <div className="flex items-center gap-3 text-xs text-neutral-400">
+                      <a
+                        href={rec.model.ollamaUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="hover:text-neutral-200 underline decoration-neutral-600 underline-offset-2"
+                      >
+                        Ollama Library ↗
+                      </a>
+                      <a
+                        href={rec.model.sourceUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="hover:text-neutral-200 underline decoration-neutral-600 underline-offset-2"
+                      >
+                        Model Card ↗
+                      </a>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleSelectModel(rec.model)}
+                      className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all duration-150
+                        ${
+                          isSelected
+                            ? "bg-emerald-500 text-neutral-950 shadow-md font-bold"
+                            : "bg-white/[0.08] text-neutral-200 hover:bg-emerald-500 hover:text-neutral-950"
+                        }`}
+                    >
+                      {isSelected ? "✓ Selected Model" : "Use this model →"}
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
           </div>
         </section>
       )}
 
+      {/* ---------------------------------------------------------------- */}
+      {/* Empty State */}
+      {/* ---------------------------------------------------------------- */}
       {results && results.length === 0 && (
-        <div className="mt-8 w-full max-w-xl px-4 py-6 rounded-xl bg-white/[0.03] ring-1 ring-white/10 text-center text-neutral-400">
-          <p className="text-lg mb-1">😅 No compatible models found</p>
-          <p className="text-sm">
-            Your hardware might be too constrained for the models in our
-            catalog. Try increasing RAM or consider a cloud option.
+        <div className="mt-8 w-full px-4 py-8 rounded-2xl bg-white/[0.03] ring-1 ring-white/10 text-center text-neutral-400">
+          <p className="text-xl mb-2">💾 No compatible models found</p>
+          <p className="text-sm max-w-md mx-auto leading-relaxed">
+            Your hardware constraints (RAM or free disk space) are too tight for the models in our verified registry. Try increasing free disk space or RAM.
           </p>
         </div>
       )}
 
+      {/* ---------------------------------------------------------------- */}
+      {/* Model Selector & Starter Type (Steps 9 & 10) */}
+      {/* ---------------------------------------------------------------- */}
+      {selectedModel && (
+        <section
+          id="selected-model-section"
+          className="mt-14 w-full bg-neutral-900/80 ring-2 ring-emerald-500/40 rounded-2xl p-6 sm:p-8 backdrop-blur-md space-y-6 shadow-2xl"
+        >
+          <div className="border-b border-white/10 pb-4">
+            <span className="text-xs uppercase tracking-wider text-emerald-400 font-bold">
+              Step 2 • Ready to build
+            </span>
+            <h2 className="text-xl sm:text-2xl font-bold text-neutral-100 mt-1">
+              Selected Model: {selectedModel.displayName}
+            </h2>
+            <p className="text-xs text-neutral-400 mt-1">
+              Verified on {new Date(selectedModel.verifiedAt).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })} • License: {selectedModel.license}
+            </p>
+          </div>
+
+          {/* Model Summary Details */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-black/40 rounded-xl p-4 border border-white/5 text-xs">
+            <div>
+              <span className="text-neutral-500 block">Ollama Tag</span>
+              <code className="text-neutral-200 font-mono font-semibold">
+                {selectedModel.ollamaTag}
+              </code>
+            </div>
+            <div>
+              <span className="text-neutral-500 block">Download Size</span>
+              <span className="text-neutral-200 font-semibold">
+                ~{selectedModel.artifactSizeGb} GB
+              </span>
+            </div>
+            <div>
+              <span className="text-neutral-500 block">Context Window</span>
+              <span className="text-neutral-200 font-semibold">
+                {(selectedModel.contextWindow / 1024).toFixed(0)}k tokens
+              </span>
+            </div>
+            <div>
+              <span className="text-neutral-500 block">Official Guidance</span>
+              <span className="text-neutral-200 font-semibold">
+                {selectedModel.officialMemoryGuidance !== null
+                  ? `${selectedModel.officialMemoryGuidance} GB`
+                  : "None (estimated)"}
+              </span>
+            </div>
+          </div>
+
+          {/* Starter Type Selection */}
+          <div className="space-y-3 pt-2">
+            <h3 className="text-sm font-semibold text-neutral-200">
+              What are you building?
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Option A: Local Chat */}
+              <button
+                type="button"
+                onClick={() => setSelectedStarter("chat")}
+                className={`p-5 rounded-xl text-left transition-all duration-150 relative border
+                  ${
+                    selectedStarter === "chat"
+                      ? "bg-emerald-950/40 border-emerald-500 text-white shadow-lg ring-1 ring-emerald-500"
+                      : "bg-white/[0.03] border-white/10 hover:border-white/20 text-neutral-300"
+                  }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="font-bold text-sm">💬 Local Chat</span>
+                  <span className="text-xs px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-medium">
+                    Universal
+                  </span>
+                </div>
+                <p className="text-xs text-neutral-400 leading-relaxed">
+                  Interactive chat interface with stream response handling, conversation history, and model parameters.
+                </p>
+              </button>
+
+              {/* Option B: Tool-calling Agent (Requirement 10) */}
+              {selectedModel.capabilities.tools ? (
+                <button
+                  type="button"
+                  onClick={() => setSelectedStarter("agent")}
+                  className={`p-5 rounded-xl text-left transition-all duration-150 relative border
+                    ${
+                      selectedStarter === "agent"
+                        ? "bg-emerald-950/40 border-emerald-500 text-white shadow-lg ring-1 ring-emerald-500"
+                        : "bg-white/[0.03] border-white/10 hover:border-white/20 text-neutral-300"
+                    }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="font-bold text-sm">🛠️ Tool-calling Agent</span>
+                    <span className="text-xs px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 font-medium">
+                      Agentic
+                    </span>
+                  </div>
+                  <p className="text-xs text-neutral-400 leading-relaxed">
+                    Autonomous agent with JSON schema tool definitions, external function dispatch, and loop execution.
+                  </p>
+                </button>
+              ) : (
+                <div className="p-5 rounded-xl text-left border border-white/5 bg-white/[0.01] opacity-60 cursor-not-allowed">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="font-bold text-sm text-neutral-400">
+                      🛠️ Tool-calling Agent
+                    </span>
+                    <span className="text-xs px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 font-medium">
+                      Unavailable
+                    </span>
+                  </div>
+                  <p className="text-xs text-amber-300/80 leading-relaxed">
+                    ⚠️ {selectedModel.displayName} does not support native tool-calling. Select a model with tool support (like Gemma 4, Qwen 3.5, or Phi-4 Mini) to build an agent.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Phase 2 Stop Boundary Confirmation (Requirement 11) */}
+          {selectedStarter && (
+            <div className="p-5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-200 leading-relaxed space-y-2">
+              <div className="flex items-center gap-2 font-bold text-sm text-emerald-300">
+                <span>🚀 Configuration Complete for {selectedStarter === "chat" ? "Local Chat" : "Tool-calling Agent"}!</span>
+              </div>
+              <p>
+                You have selected <strong className="text-white">{selectedModel.displayName}</strong> for your <strong className="text-white">{selectedStarter === "chat" ? "Chat Starter" : "Agent Starter"}</strong>.
+              </p>
+              <div className="bg-black/40 p-3 rounded-lg border border-white/10 font-mono text-neutral-200 flex items-center justify-between">
+                <span>ollama pull {selectedModel.ollamaTag}</span>
+                <button
+                  type="button"
+                  onClick={() => handleCopy(selectedModel.ollamaTag)}
+                  className="text-emerald-400 hover:text-emerald-300 font-sans text-xs underline"
+                >
+                  {copiedTag === selectedModel.ollamaTag ? "Copied!" : "Copy"}
+                </button>
+              </div>
+              <p className="text-neutral-400 italic">
+                Note: Project generation will be built in Phase 3. You now have the exact model and starter type ready to launch!
+              </p>
+            </div>
+          )}
+        </section>
+      )}
+
       {/* Footer */}
-      <footer className="mt-16 text-xs text-neutral-600">
-        Built for Hacktoberfest 2026 — Weekend Challenge: Build for a Friend
+      <footer className="mt-16 text-xs text-neutral-500 text-center space-y-1">
+        <p>Hack Day Starter • Built for Hacktoberfest 2026 — Weekend Challenge: Build for a Friend</p>
+        <p>Verified Model Registry v{REGISTRY_METADATA.version} ({REGISTRY_METADATA.verifiedDisplayDate})</p>
       </footer>
     </main>
   );
