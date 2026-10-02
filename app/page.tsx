@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import JSZip from "jszip";
 import { REGISTRY_METADATA } from "@/lib/registry";
 import { formatModelDisplaySize, getModelMemoryReport } from "@/lib/memory-calculator";
 import { RECOMMENDED_DISK_BUFFER_GB } from "@/lib/recommend";
+import type { StarterProjectResult } from "@/lib/starter/types";
 import type {
   GpuType,
   OperatingSystem,
@@ -92,6 +94,12 @@ export default function HomePage() {
   const [selectedStarter, setSelectedStarter] = useState<StarterType | null>(null);
   const [copiedTag, setCopiedTag] = useState<string | null>(null);
 
+  // Phase 3 Starter Generation State
+  const [isGenerating, setIsGenerating] = useState<boolean>(false);
+  const [generatedProject, setGeneratedProject] = useState<StarterProjectResult | null>(null);
+  const [generationError, setGenerationError] = useState<string | null>(null);
+  const [isDownloading, setIsDownloading] = useState<boolean>(false);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
@@ -99,6 +107,8 @@ export default function HomePage() {
     setResults(null);
     setSelectedModel(null);
     setSelectedStarter(null);
+    setGeneratedProject(null);
+    setGenerationError(null);
 
     try {
       const payload = {
@@ -144,11 +154,68 @@ export default function HomePage() {
   function handleSelectModel(model: ModelEntry) {
     setSelectedModel(model);
     setSelectedStarter(null);
+    setGeneratedProject(null);
+    setGenerationError(null);
     setTimeout(() => {
       document
         .getElementById("selected-model-section")
         ?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 100);
+  }
+
+  async function handleGenerateStarter() {
+    if (!selectedModel || !selectedStarter) return;
+    setIsGenerating(true);
+    setGenerationError(null);
+    setGeneratedProject(null);
+
+    try {
+      const selectedRec = results?.find((r) => r.model.id === selectedModel.id);
+      const res = await fetch("/api/starter", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          modelId: selectedModel.id,
+          starterType: selectedStarter,
+          explanation: selectedRec?.explanation,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Failed to generate starter project");
+      }
+
+      setGeneratedProject(data.result);
+    } catch (err: any) {
+      setGenerationError(err.message || "An unexpected error occurred");
+    } finally {
+      setIsGenerating(false);
+    }
+  }
+
+  async function handleDownloadZip() {
+    if (!generatedProject) return;
+    setIsDownloading(true);
+    try {
+      const zip = new JSZip();
+      for (const file of generatedProject.files) {
+        zip.file(file.path, file.content);
+      }
+      const blob = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${generatedProject.projectName}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      alert("Failed to build ZIP file: " + (err.message || err));
+    } finally {
+      setIsDownloading(false);
+    }
   }
 
   return (
@@ -744,7 +811,11 @@ export default function HomePage() {
               {/* Option A: Local Chat */}
               <button
                 type="button"
-                onClick={() => setSelectedStarter("chat")}
+                onClick={() => {
+                  setSelectedStarter("chat");
+                  setGeneratedProject(null);
+                  setGenerationError(null);
+                }}
                 className={`p-5 rounded-xl text-left transition-all duration-150 relative border
                   ${
                     selectedStarter === "chat"
@@ -759,15 +830,19 @@ export default function HomePage() {
                   </span>
                 </div>
                 <p className="text-xs text-neutral-400 leading-relaxed">
-                  Interactive chat interface with stream response handling, conversation history, and model parameters.
+                  Interactive Node.js/TypeScript CLI chat with stream handling, conversation history, and direct local Ollama connectivity.
                 </p>
               </button>
 
-              {/* Option B: Tool-calling Agent (Requirement 5 & 10) */}
-              {selectedModel.capabilities.tools ? (
+              {/* Option B: Tool-calling Agent (Requires tools === true) */}
+              {selectedModel.capabilities.tools === true ? (
                 <button
                   type="button"
-                  onClick={() => setSelectedStarter("agent")}
+                  onClick={() => {
+                    setSelectedStarter("agent");
+                    setGeneratedProject(null);
+                    setGenerationError(null);
+                  }}
                   className={`p-5 rounded-xl text-left transition-all duration-150 relative border
                     ${
                       selectedStarter === "agent"
@@ -778,11 +853,11 @@ export default function HomePage() {
                   <div className="flex items-center justify-between mb-1.5">
                     <span className="font-bold text-sm">🛠️ Tool-calling Agent</span>
                     <span className="text-xs px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 font-medium">
-                      Agentic
+                      Agentic Loop
                     </span>
                   </div>
                   <p className="text-xs text-neutral-400 leading-relaxed">
-                    Autonomous agent with JSON schema tool definitions, external function dispatch, and loop execution.
+                    Autonomous agent with JSON schema tool definitions, safe local calculator execution, and real multi-step tool-calling loop.
                   </p>
                 </button>
               ) : (
@@ -796,35 +871,113 @@ export default function HomePage() {
                     </span>
                   </div>
                   <p className="text-xs text-amber-300/80 leading-relaxed">
-                    ⚠️ {selectedModel.displayName} does not support native tool-calling in Ollama. Select a model with tool support (like Gemma 4, Qwen 3.5, or Phi-4 Mini) to build an agent.
+                    ⚠️ {selectedModel.displayName} does not have verified native tool-calling support. Select a model with verified tools (like Gemma 4, Qwen 3.5, or Phi-4 Mini) to build an agent.
                   </p>
                 </div>
               )}
             </div>
           </div>
 
-          {/* Phase 2 Stop Boundary Confirmation (Requirement 16) */}
-          {selectedStarter && (
-            <div className="p-5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-200 leading-relaxed space-y-2">
-              <div className="flex items-center gap-2 font-bold text-sm text-emerald-300">
-                <span>🚀 Configuration Complete for {selectedStarter === "chat" ? "Local Chat" : "Tool-calling Agent"}!</span>
+          {/* Generation Error Banner */}
+          {generationError && (
+            <div className="p-4 rounded-xl bg-red-950/50 border border-red-500/50 text-xs text-red-200">
+              <span className="font-bold text-red-400">Generation Error: </span>
+              {generationError}
+            </div>
+          )}
+
+          {/* Action: Generate Starter Button */}
+          {selectedStarter && !generatedProject && (
+            <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-4 p-5 rounded-xl bg-black/40 border border-white/10">
+              <div>
+                <h4 className="text-sm font-semibold text-neutral-100">
+                  Ready to generate your {selectedStarter === "chat" ? "Local Chat" : "Tool-calling Agent"} starter?
+                </h4>
+                <p className="text-xs text-neutral-400 mt-0.5">
+                  Pre-configured deterministic project for{" "}
+                  <code className="text-emerald-400 font-mono font-bold">{selectedModel.ollamaTag}</code>.
+                </p>
               </div>
-              <p>
-                You have selected <strong className="text-white">{selectedModel.displayName}</strong> for your <strong className="text-white">{selectedStarter === "chat" ? "Chat Starter" : "Agent Starter"}</strong>.
-              </p>
-              <div className="bg-black/40 p-3 rounded-lg border border-white/10 font-mono text-neutral-200 flex items-center justify-between">
-                <span>ollama pull {selectedModel.ollamaTag}</span>
-                <button
-                  type="button"
-                  onClick={() => handleCopy(selectedModel.ollamaTag)}
-                  className="text-emerald-400 hover:text-emerald-300 font-sans text-xs underline"
-                >
-                  {copiedTag === selectedModel.ollamaTag ? "Copied!" : "Copy"}
-                </button>
+              <button
+                type="button"
+                onClick={handleGenerateStarter}
+                disabled={isGenerating}
+                className="w-full sm:w-auto px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-black font-bold text-sm shadow-lg shadow-emerald-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed shrink-0 flex items-center justify-center gap-2 cursor-pointer"
+              >
+                {isGenerating ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4 text-black" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                    </svg>
+                    <span>Generating starter...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>⚡ Generate Starter</span>
+                  </>
+                )}
+              </button>
+            </div>
+          )}
+
+          {/* Success: Generated Files and Download ZIP */}
+          {generatedProject && (
+            <div className="space-y-4 pt-2">
+              <div className="p-6 rounded-2xl bg-emerald-950/25 border border-emerald-500/40 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 text-emerald-400 font-bold text-base">
+                    <span>✓ Starter generated</span>
+                    <span className="text-xs px-2.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono font-normal border border-emerald-500/30">
+                      {generatedProject.projectName}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleDownloadZip}
+                    disabled={isDownloading}
+                    className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-sm shadow-lg shadow-emerald-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    {isDownloading ? (
+                      <span>Packaging ZIP...</span>
+                    ) : (
+                      <>
+                        <span>📦 Download ZIP</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {/* Generated Files Listing */}
+                <div className="space-y-2 bg-black/40 p-4 rounded-xl border border-white/5">
+                  <div className="text-xs font-semibold text-neutral-300 uppercase tracking-wider flex items-center justify-between">
+                    <span>Generated Files ({generatedProject.files.length})</span>
+                    <span className="text-[11px] text-neutral-500 font-mono">Zero external runtime dependencies</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-mono text-neutral-300">
+                    {generatedProject.files.map((file) => (
+                      <div key={file.path} className="flex items-center gap-2 p-2 rounded bg-white/[0.03] border border-white/5">
+                        <span className="text-emerald-400 font-bold">✓</span>
+                        <span className="text-neutral-200">{file.path}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Setup Instructions */}
+                <div className="space-y-2 text-xs text-neutral-300">
+                  <div className="font-semibold text-neutral-200">Setup Instructions:</div>
+                  <div className="bg-black/60 p-3.5 rounded-lg border border-white/10 font-mono text-neutral-200 space-y-1">
+                    <div className="text-neutral-500"># 1. Unzip the project and open terminal inside:</div>
+                    <div className="text-neutral-500"># 2. Pull the verified model:</div>
+                    <div className="text-emerald-400 font-bold">ollama pull {selectedModel.ollamaTag}</div>
+                    <div className="text-neutral-500"># 3. Install dev dependencies:</div>
+                    <div className="text-neutral-200">npm install</div>
+                    <div className="text-neutral-500"># 4. Launch your starter:</div>
+                    <div className="text-emerald-300">npm run dev</div>
+                  </div>
+                </div>
               </div>
-              <p className="text-neutral-400 italic">
-                Note: Project generation will be built in Phase 3. You now have the exact verified model artifact and starter type ready to launch!
-              </p>
             </div>
           )}
         </section>
