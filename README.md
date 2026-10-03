@@ -242,12 +242,14 @@ npm run dev
 │       ├── generate.ts             # In-memory deterministic project generator
 │       └── templates/
 │           ├── chat.ts             # Zero-dependency Local Chat template
-│           └── agent.ts            # Autonomous Tool-Calling Agent template
+│           ├── agent.ts            # Autonomous Tool-Calling Agent template
+│           └── readiness.ts        # Ollama daemon & model readiness check template
 ├── scripts/
 │   └── sync-model-registry.ts      # Automated registry discovery & discrepancy checker
 ├── tests/
 │   ├── recommend.test.ts           # Tests A–N: 14 recommendation & registry tests
-│   └── starter.test.ts             # Tests A–K: 11 starter generation & security tests
+│   ├── starter.test.ts             # Tests A–K: 11 starter generation & security tests
+│   └── readiness.test.ts           # Tests R1–R6: 8 readiness & runtime integration tests
 ├── package.json
 ├── LICENSE                         # MIT License
 └── README.md
@@ -257,7 +259,7 @@ npm run dev
 
 ## Automated Test Suite
 
-Run all 25 unit, integration, and security tests:
+Run all 33 unit, integration, and security tests:
 
 ```bash
 npm test
@@ -266,9 +268,11 @@ npm test
 ### Test Coverage Highlights:
 - **Recommendation Scenarios (A–N):** Apple Silicon 24GB, CPU-only 8GB, disk space headroom enforcement, legacy/retired model exclusion, tool-calling filtering, and live observation discrepancy detection.
 - **Starter Generation & Security (A–K):** Exact model tag injection, valid relative file structures, determinism, agent no-tools gating, readline API safety (no invalid `clearLine`/`cursorTo` calls), static AST security audit (zero `eval`/`Function`), dynamic arithmetic correctness, and API endpoint safety gating.
+- **Ollama & Model Readiness (R1–R6):** Friendly actionable diagnostics when Ollama daemon is unreachable, exact model tag check with `ollama pull <model>` instructions, readiness confirmation, and unchanged chat & agent execution loop.
 
 ---
 
 ## License
 
 [MIT](LICENSE) © 2026 Hack Day Starter Contributors
+

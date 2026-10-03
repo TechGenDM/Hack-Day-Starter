@@ -1,5 +1,6 @@
 import { StarterFile, StarterGenerationOptions } from "../types";
 import { formatModelDisplaySize } from "../../memory-calculator";
+import { generateReadinessModule } from "./readiness";
 
 export function generateAgentStarter(options: StarterGenerationOptions): StarterFile[] {
   const { model, explanation } = options;
@@ -370,39 +371,6 @@ export class OllamaAgentClient {
   }
 
   /**
-   * Checks if the local Ollama instance is accessible.
-   */
-  async checkConnection(): Promise<boolean> {
-    try {
-      const res = await fetch(\`\${this.baseUrl}/api/tags\`, { method: "GET" });
-      return res.ok;
-    } catch {
-      return false;
-    }
-  }
-
-  /**
-   * Checks if the configured model is installed locally.
-   */
-  async isModelInstalled(): Promise<boolean> {
-    try {
-      const res = await fetch(\`\${this.baseUrl}/api/tags\`, { method: "GET" });
-      if (!res.ok) return false;
-      const data = (await res.json()) as { models?: Array<{ name: string }> };
-      const normalizedTag = this.modelTag.includes(":")
-        ? this.modelTag
-        : \`\${this.modelTag}:latest\`;
-      return (
-        data.models?.some(
-          (m) => m.name === this.modelTag || m.name === normalizedTag
-        ) ?? false
-      );
-    } catch {
-      return false;
-    }
-  }
-
-  /**
    * Calls Ollama /api/chat with tools enabled.
    */
   async chatWithTools(
@@ -440,6 +408,7 @@ export class OllamaAgentClient {
   const indexContent = `import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { OllamaAgentClient, ChatMessage } from "./ollama.js";
+import { ensureOllamaReady } from "./readiness.js";
 import { calculatorTool, executeCalculator } from "./tools/calculator.js";
 
 // Configured model tag: verified for native tool calling
@@ -466,23 +435,10 @@ async function main() {
 
   const client = new OllamaAgentClient(MODEL_TAG, OLLAMA_HOST);
 
-  // 1. Verify connection to local Ollama daemon
-  const isConnected = await client.checkConnection();
-  if (!isConnected) {
-    console.error("❌ ERROR: Could not connect to local Ollama at " + OLLAMA_HOST);
-    console.error("\\nPlease ensure Ollama is installed and running:");
-    console.error("  1. Start Ollama: 'ollama serve' (or open the desktop app)");
-    console.error(\`  2. Pull the model: 'ollama pull \${MODEL_TAG}'\`);
-    console.error("  3. Verify listener: curl http://localhost:11434/api/tags\\n");
-    process.exit(1);
-  }
-
-  // 2. Verify model availability
-  const isInstalled = await client.isModelInstalled();
-  if (!isInstalled) {
-    console.warn(\`⚠️ Notice: Model '\${MODEL_TAG}' was not found in your local Ollama library.\`);
-    console.warn("Run the following command in another terminal tab to download it:");
-    console.warn(\`  ollama pull \${MODEL_TAG}\\n\`);
+  // Readiness check: Ollama reachable + exact model tag installed
+  if (!(await ensureOllamaReady(OLLAMA_HOST, MODEL_TAG))) {
+    process.exitCode = 1;
+    return;
   }
 
   console.log("✨ Agent ready! Try asking complex calculations or math problems:");
@@ -586,6 +542,7 @@ main().catch((err) => {
     { path: ".gitignore", content: gitignoreContent },
     { path: "src/tools/calculator.ts", content: calculatorToolContent },
     { path: "src/ollama.ts", content: ollamaClientContent },
+    { path: "src/readiness.ts", content: generateReadinessModule() },
     { path: "src/index.ts", content: indexContent },
   ];
 }
