@@ -1,28 +1,76 @@
-# 🚀 Hack Day Starter
+# 🚀 Hack Day Starter — Run Local AI Models on Any Laptop or PC
 
-**Hacktoberfest 2026 — Weekend Challenge: Build for a Friend**
+[![Tests](https://img.shields.io/badge/tests-33%2F33%20passing-brightgreen.svg)](tests/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://www.typescriptlang.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-18%2B%20(Native%20Fetch)-success.svg)](https://nodejs.org/)
+[![Ollama](https://img.shields.io/badge/Ollama-Local%20Inference-black.svg)](https://ollama.com)
+[![License](https://img.shields.io/badge/license-MIT-purple.svg)](LICENSE)
+[![Hacktoberfest 2026](https://img.shields.io/badge/Hacktoberfest-2026%20Weekend%20Challenge-orange.svg)](https://github.com/TechGenDM/hack-day-starter)
 
-> Stop wasting the first 2–3 hours of your hack day choosing an open-weight model, fighting out-of-memory errors, and fixing environment problems. Hack Day Starter profiles your machine, recommends a verified local model that actually runs comfortably on your hardware, and generates an immediate, production-ready TypeScript starter project.
-
----
-
-## The Real Problem: "Build for a Friend"
-
-During hack days and weekend builds, developers wanting to build with local open-weight AI face recurring bottlenecks:
-- **Guesswork on Model Sizing:** Downloading a 14 GB or 20 GB model only to discover it exceeds system RAM, swaps to disk, or runs at an unusable 0.5 tokens/second.
-- **Outdated Model Information:** Relying on stale model recommendations when modern architectures (such as Gemma 4, Qwen 3.5, and GPT-OSS) offer superior speed, context windows, and native tool-calling capabilities.
-- **Disk Space Blindspots:** Failing to account for free SSD headroom before kicking off multi-gigabyte downloads.
-- **Boilerplate & Environment Friction:** Spending hours wiring up Ollama API clients, handling streaming, setting up function calling loops, or dealing with fragile CLI progress code.
-
-**Hack Day Starter** was built to solve this exact problem for a friend:
-1. Enter your laptop's physical specifications (RAM, GPU acceleration, OS, and free disk space).
-2. Receive a transparent, deterministic recommendation scored for your hardware and use case.
-3. Select your project archetype (**Local Chat** or **Tool-calling Agent**).
-4. Download a pre-configured, zero-runtime-dependency TypeScript project with the exact verified model tag injected, ready to run with `npm run dev`.
+> **The definitive answer to: *"How can I run a local AI model on my device?"***  
+> **Hack Day Starter** profiles your hardware (RAM, GPU, CPU, SSD headroom), matches your machine with a verified open-weight AI model that runs smoothly without crashing, and generates an immediate, production-ready TypeScript project with **zero runtime dependencies**.
 
 ---
 
-## System Architecture
+## ⚡ Quick Answer: How to Run a Local AI Model on Your Device
+
+If you are asking *"How do I run an open-source AI model locally on my computer?"*, here is the 3-step process:
+
+1. **Install Ollama** (the local AI runtime):
+   ```bash
+   # macOS / Linux
+   curl -fsSL https://ollama.com/install.sh | sh
+   # Windows: Download installer from https://ollama.com/download
+   ```
+2. **Match the right model to your RAM**:
+   - **8 GB RAM:** Run `phi4-mini` (2.5 GB) or `qwen3.5:4b` (3.4 GB)
+   - **16 GB RAM:** Run `gemma4:e4b` (6.6 GB) or `qwen3.5:9b` (6.6 GB) or `gemma4:12b` (7.7 GB)
+   - **24 GB – 32 GB RAM:** Run `gemma4:12b` (with 256K context) or `qwen3.8:27b` (18 GB)
+   - **64 GB+ RAM:** Run `qwen3-coder-next` (52 GB) or large MoE models
+3. **Pull and execute**:
+   ```bash
+   ollama run gemma4:12b
+   ```
+
+**The catch?** Wiring up streaming, handling conversational state, managing function/tool calls, avoiding disk swap death, and writing boilerplate code takes hours.  
+**Hack Day Starter automates this end-to-end.**
+
+---
+
+## 🎯 The "Build for a Friend" Problem
+
+During hackathons, weekend sprints, and local AI prototyping, developers lose the first 2–4 hours fighting common pitfalls:
+
+* 💥 **Out-of-Memory (OOM) Crashes:** Downloading a 14 GB or 20 GB model on an 8 GB or 16 GB laptop triggers aggressive swap thrashing, freezing the machine or crawling at 0.2 tokens/second.
+* 📦 **Stale Model Catalogs:** Outdated tutorials recommend retired 2023-era models (like Llama 2 7B) instead of modern state-of-the-art architectures (Gemma 4, Qwen 3.5, Phi-4) that offer 256K context and native tool calling.
+* 💾 **Disk Space Blindspots:** Pulling models without checking SSD headroom can stall multi-gigabyte downloads halfway through.
+* 🔌 **Boilerplate & Runtime Frustration:** Connecting to local REST daemons, handling chunked NDJSON streams, configuring tool execution loops, and debugging raw `ECONNREFUSED` connection crashes drain developer momentum.
+
+**Hack Day Starter** was created to solve this for a friend:
+1. Detect your hardware specs (RAM, GPU acceleration, OS, free storage).
+2. Deterministically recommend verified models with realistic memory requirements.
+3. Choose your starter archetype (**Local Chat** or **Tool-Calling Agent**).
+4. Download a clean, ready-to-run TypeScript project ZIP and start building in under 60 seconds.
+
+---
+
+## 📊 Hardware Sizing Matrix: What Model Can Your Computer Run?
+
+Memory calculations must account for the **model weights**, the **KV cache** (which scales with context length), and **operating system overhead** (~2.5–4 GB):
+
+| Your Available RAM | Recommended Models | Ollama Tag | Model Size | Context Window | Native Tool Calling | Experience / Speed |
+| :--- | :--- | :--- | :--- | :--- | :---: | :--- |
+| **8 GB RAM** (Standard Laptop) | **Phi-4 Mini**<br>**Nemotron 3 Nano**<br>**Qwen 3.5 4B** | `phi4-mini`<br>`nemotron-3-nano:4b`<br>`qwen3.5:4b` | 2.5 GB<br>2.8 GB<br>3.4 GB | 128K<br>256K<br>256K | ✅<br>✅<br>✅ | ⚡ Fast (30–60 tok/s on M-series or modern CPU) |
+| **16 GB RAM** (Dev Laptop) | **Gemma 4 E4B**<br>**Qwen 3.5 9B**<br>**Gemma 4 12B** | `gemma4:e4b`<br>`qwen3.5:9b`<br>`gemma4:12b` | 6.6 GB<br>6.6 GB<br>7.7 GB | 128K<br>256K<br>256K | ✅<br>✅<br>✅ | 🚀 Optimal balance of intelligence, speed, and context |
+| **24 GB – 32 GB RAM** (Pro Mac / RTX PC) | **Gemma 4 12B** (Full KV)<br>**Qwen 3.8 27B**<br>**GPT-OSS 20B** | `gemma4:12b`<br>`qwen3.8:27b`<br>`gpt-oss:20b` | 7.7 GB<br>18 GB<br>14 GB | 256K<br>256K<br>128K | ✅<br>✅<br>✅ | 🧠 High reasoning power, complex coding & agent tasks |
+| **64 GB+ Unified / VRAM** (Workstation) | **Qwen 3 Coder Next**<br>**Qwen 3.6 35B** | `qwen3-coder-next`<br>`qwen3.6:35b` | 52 GB<br>23 GB | 256K<br>256K | ✅<br>✅ | 🏆 Full frontier-grade local intelligence |
+
+> [!NOTE]
+> **Unified Memory (Apple Silicon M1/M2/M3/M4):** macOS dynamically shares RAM between CPU and GPU. A 16 GB Mac can dedicate ~12 GB directly to model weights and KV cache, making it one of the most efficient local AI platforms available.
+
+---
+
+## 🏗️ System Architecture
 
 ```text
                ┌───────────────────────────────────────────────┐
@@ -34,9 +82,9 @@ During hack days and weekend builds, developers wanting to build with local open
                                        ▼
                ┌───────────────────────────────────────────────┐
                │             Hack Day Starter (App)            │
-               │  • Deterministic hardware compatibility       │
+               │  • Deterministic hardware compatibility score │
                │  • Verified Model Registry (Oct 2026 data)    │
-               │  • Authoritative vs Estimated memory guidance │
+               │  • Authoritative vs Estimated memory bounds   │
                │  • Free disk space safety gate                │
                └───────────────────────┬───────────────────────┘
                                        │
@@ -52,7 +100,8 @@ During hack days and weekend builds, developers wanting to build with local open
                ┌───────────────────────────────────────────────┐
                │      Generated Starter Project (ZIP)          │
                │  • Zero runtime dependencies (native fetch)   │
-               │  • Direct /api/chat client                    │
+               │  • Direct /api/chat streaming client          │
+               │  • Built-in Ollama & Model Readiness check    │
                │  • Safe recursive-descent math tool           │
                │  • Deterministic in-memory generation         │
                └───────────────────────┬───────────────────────┘
@@ -81,40 +130,39 @@ During hack days and weekend builds, developers wanting to build with local open
 ### Component Roles & Boundaries
 
 | Component | Role | What It Does / Does Not Do |
-| --- | --- | --- |
-| **Ollama** | Local Runtime Daemon | Runs locally on `http://localhost:11434`. Pulls weights and executes inference on your CPU/GPU. |
-| **Open-Weight Models** | Intelligence Layer | Neural network model weights (e.g. `gemma4:12b`, `qwen3.5:9b`) executed by Ollama. |
-| **Hack Day Starter** | Generator & Bootstrapper | Next.js application that profiles hardware, ranks models, and generates starter ZIPs in-memory. Does **not** execute inference itself. |
-| **Generated Project** | Developer Project | Clean, standalone TypeScript/Node.js project extracted from the downloaded ZIP and run directly by the developer. |
+| :--- | :--- | :--- |
+| **Ollama** | Local Daemon | Runs locally on port `11434`. Pulls weights, manages GGUF quants, and executes hardware-accelerated tensor math on Metal/CUDA/Vulkan. |
+| **Open-Weight Models** | Intelligence Layer | Neural network weights (e.g., `gemma4:12b`, `qwen3.5:9b`). Runs completely offline inside Ollama. |
+| **Hack Day Starter** | Generator & Recommender | Profiles hardware, filters models, and builds custom starter ZIPs in-memory. Does **not** proxy inference or transmit prompts. |
+| **Generated Project** | Your Application | Independent TypeScript codebase. Runs directly on your machine with zero external SDKs or telemetry. |
 
 ---
 
-## Starter Archetypes
+## 🛠️ Starter Archetypes
 
 ### 1. Local Chat (`hack-day-starter-chat-<model>`)
-- **Use Case:** Interactive conversational assistants, prompt prototyping, multi-turn reasoning.
-- **Features:** 
-  - Zero runtime dependencies (uses native Node.js 18+ `fetch`).
-  - Terminal-based interactive conversation with full multi-turn context history.
-  - Connection check to local Ollama daemon on startup with clear error diagnostics.
-  - Model installation check with helpful `ollama pull` reminder if weights are missing.
-  - Clean stream EOF and graceful shutdown on `exit` or `Ctrl+C`.
+* **Best for:** Chatbots, personal offline copilots, document Q&A, and conversational prototyping.
+* **Key Capabilities:**
+  * **Zero runtime dependencies:** Uses native Node.js 18+ global `fetch`.
+  * **Interactive CLI loop:** Multi-turn conversational memory with seamless terminal I/O.
+  * **Smart readiness check:** Verifies the Ollama daemon and local model existence *before* prompting the user.
+  * **Graceful shutdown:** Clean EOF handling on `Ctrl+C` or typing `exit`.
 
-### 2. Tool-Calling Agent (`hack-day-starter-agent-<model>`)
-- **Use Case:** Autonomous agents, calculation workflows, structured tool calling.
-- **Gating:** Requires verified native tool-calling support (`model.capabilities.tools === true`). Models lacking tool support are disabled in the UI and rejected by the API.
-- **Features:**
-  - Real autonomous execution loop: Model produces `tool_calls` -> Local tool runs -> Result returned as `role: "tool"` -> Model synthesizes final response.
-  - Built-in safe `calculator` tool powered by a pure recursive-descent parser (zero `eval()`, zero `new Function()`).
-  - Extensible tool registration pattern in `src/tools/` using standard JSON Schema.
+### 2. Autonomous Tool-Calling Agent (`hack-day-starter-agent-<model>`)
+* **Best for:** Multi-step autonomous agents, calculation engines, and structured function execution.
+* **Strict Safety Gate:** Only selectable when the model is verified to support native tool calling (`model.capabilities.tools === true`).
+* **Key Capabilities:**
+  * **Autonomous ReAct Loop:** Model generates structured `tool_calls` → runtime executes tool → sends `{ role: "tool", content: result }` back to model → model synthesizes natural language conclusion.
+  * **Safe Math Engine:** Ships with `calculator.ts`, a pure recursive-descent arithmetic parser (**0% `eval()`**, **0% `new Function()`**).
+  * **Extensible Architecture:** Add new tools in minutes using standard JSON Schema definitions.
 
 ---
 
-## Real End-to-End Runtime Execution: Gemma 4 12B
+## 💻 Real End-to-End Execution Trace: Gemma 4 12B Agent
 
-The generated Tool-calling Agent starter has been tested end-to-end against local Ollama running `gemma4:12b`:
+Here is the exact terminal output from the generated tool-calling agent running against local Ollama with `gemma4:12b`:
 
-```text
+```bash
 $ npm run dev
 
 =================================================
@@ -137,97 +185,207 @@ Agent: 342 multiplied by 19, divided by 4, equals 1624.5.
 ```
 
 ### What Happened Behind the Scenes:
-1. **User Request:** User provided a multi-step arithmetic prompt.
-2. **Intent & Function Calling:** `gemma4:12b` analyzed the request and emitted a structured tool call: `calculate({"expression": "(342 * 19) / 4"})`.
-3. **Local Tool Execution:** `src/tools/calculator.ts` safely parsed and evaluated the expression, returning `1624.5`.
-4. **Context Injection:** The tool result was appended to the conversation history as `{ role: "tool", content: "1624.5" }`.
-5. **Synthesis:** Ollama received the conversation history and the model produced the final natural language answer.
+1. **User Prompt:** Submitted a natural-language multi-step arithmetic request.
+2. **Autonomous Tool Call:** `gemma4:12b` recognized it required a calculation and emitted a structured tool call: `calculate({"expression": "(342 * 19) / 4"})`.
+3. **Safe Evaluation:** `src/tools/calculator.ts` evaluated the expression mathematically without invoking any shell or arbitrary JavaScript execution.
+4. **Tool Context Feeding:** The output `1624.5` was sent back to the model as a `tool` role message.
+5. **Final Synthesis:** Gemma 4 synthesized the final, human-readable answer.
 
 ---
 
-## Verified Model Registry (as of October 2, 2026)
+## 🔍 Verified Model Registry (Live Ollama Source Snapshot)
 
-Models are evaluated against verified public artifacts on Ollama:
+Unlike static blog posts that become outdated within weeks, Hack Day Starter uses a **Verified Model Registry** synchronized with official Ollama library observations:
 
-| Model | Provider | Tag | Listed Size | Context | Tools | Memory Guidance |
-| --- | --- | --- | --- | --- | --- | --- |
-| **Gemma 4 12B** | Google | `gemma4:12b` | 7.7GB | 256k | ✓ | Official: 16 GB |
-| **Gemma 4 e4b** | Google | `gemma4:e4b` | 6.6GB | 128k | ✓ | Official: 8 GB |
-| **Qwen 3.5 9B** | Alibaba | `qwen3.5:9b` | 6.6GB | 256k | ✓ | Estimated: ~10 GB |
-| **Qwen 3.5 4B** | Alibaba | `qwen3.5:4b` | 3.4GB | 256k | ✓ | Estimated: ~5.5 GB |
-| **Qwen 3.8 27B** | Alibaba | `qwen3.8:27b` | 18GB | 256k | ✓ | Estimated: ~26 GB |
-| **Qwen 3.6 27B** | Alibaba | `qwen3.6:27b` | 18GB | 256k | ✓ | Estimated: ~26 GB |
-| **Qwen 3.6 35B** | Alibaba | `qwen3.6:35b` | 23GB | 256k | ✓ | Estimated: ~32 GB |
-| **Qwen 3 8B** | Alibaba | `qwen3:8b` | 5.2GB | 40k | ✓ | Estimated: ~8 GB |
-| **GPT-OSS 20B** | Community | `gpt-oss:20b` | 14GB | 128k | ✓ | Estimated: ~20 GB |
-| **Phi-4 Mini** | Microsoft | `phi4-mini` | 2.5GB | 128k | ✓ | Estimated: ~4 GB |
-| **Nemotron 3 Nano 4B** | NVIDIA | `nemotron-3-nano:4b` | 2.8GB | 256k | ✓ | Estimated: ~4.5 GB |
-| **Qwen 3 Coder Next** | Alibaba | `qwen3-coder-next:latest` | 52GB | 256k | ✓ | Estimated: ~64 GB |
-| **DeepSeek R1 1.5B** | DeepSeek | `deepseek-r1:1.5b` | 1.1GB | 128k | ✕ | Estimated: ~2.5 GB |
-| *Gemma 3 12B* | Google | `gemma3:12b` | 8.1GB | 128k | ✓ | *Legacy (Gemma 4 preferred)* |
-| *Llama 2 7B* | Meta | `llama2:7b` | 3.8GB | 4k | ✕ | *Retired (filtered)* |
+| Model | Creator | Ollama Tag | Display Size | Context | Tools | Memory Guidance |
+| :--- | :--- | :--- | :---: | :---: | :---: | :--- |
+| **Gemma 4 12B** | Google | `gemma4:12b` | 7.7 GB | 256K | ✅ | Official: 16 GB |
+| **Gemma 4 E4B** | Google | `gemma4:e4b` | 6.6 GB | 128K | ✅ | Official: 8 GB |
+| **Qwen 3.5 9B** | Alibaba | `qwen3.5:9b` | 6.6 GB | 256K | ✅ | Estimated: ~10 GB |
+| **Qwen 3.5 4B** | Alibaba | `qwen3.5:4b` | 3.4 GB | 256K | ✅ | Estimated: ~5.5 GB |
+| **Qwen 3.8 27B** | Alibaba | `qwen3.8:27b` | 18 GB | 256K | ✅ | Estimated: ~26 GB |
+| **Qwen 3.6 27B** | Alibaba | `qwen3.6:27b` | 18 GB | 256K | ✅ | Estimated: ~26 GB |
+| **Qwen 3.6 35B** | Alibaba | `qwen3.6:35b` | 23 GB | 256K | ✅ | Estimated: ~32 GB |
+| **GPT-OSS 20B** | Community | `gpt-oss:20b` | 14 GB | 128K | ✅ | Estimated: ~20 GB |
+| **Phi-4 Mini** | Microsoft | `phi4-mini` | 2.5 GB | 128K | ✅ | Estimated: ~4 GB |
+| **Nemotron 3 Nano 4B** | NVIDIA | `nemotron-3-nano:4b` | 2.8 GB | 256K | ✅ | Estimated: ~4.5 GB |
+| **Qwen 3 Coder Next** | Alibaba | `qwen3-coder-next:latest` | 52 GB | 256K | ✅ | Estimated: ~64 GB |
+| **DeepSeek R1 1.5B** | DeepSeek | `deepseek-r1:1.5b` | 1.1 GB | 128K | ❌ | Estimated: ~2.5 GB |
 
 ---
 
-## Security & Verification Standards
+## 🚦 Ollama & Model Readiness UX (Zero Stack Traces)
 
-1. **No Arbitrary Model Tags:** The generation API (`POST /api/starter`) only accepts models registered in `VERIFIED_MODEL_REGISTRY`. Arbitrary, unverified, or rogue model strings are rejected with HTTP 404.
-2. **Strict Tool-Calling Verification:** Starter generation enforces `model.capabilities.tools === true` for agent projects. Models without verified tool calling are rejected with HTTP 400.
-3. **No Arbitrary JavaScript Execution:** `src/tools/calculator.ts` strictly rejects any input containing non-arithmetic characters. It never invokes `eval()`, `new Function()`, child processes, or filesystem APIs.
-4. **Deterministic Generation:** Identical model parameters and starter types produce 100% byte-identical project files without relying on nondeterministic LLM APIs.
-5. **Zero External API Keys:** No accounts, passwords, closed-API keys, or telemetry tracking required.
+First-time local AI developers frequently run into confusing crashes:
+* `FetchError: connect ECONNREFUSED 127.0.0.1:11434`
+* `model 'xyz' not found, try pulling it first`
+
+Generated projects ship with an integrated **Readiness Check** (`src/readiness.ts`). Before any prompt is processed, it checks:
+
+1. **Is Ollama Running?**  
+   If the daemon is offline, it prints a clean, formatted guide:
+   ```text
+   ===============================================================
+   ⚠️  OLLAMA IS NOT REACHABLE
+   ---------------------------------------------------------------
+   Could not connect to Ollama at: http://localhost:11434
+   
+   To run this starter, please:
+   1. Install Ollama: https://ollama.com/download
+   2. Start the Ollama application or run 'ollama serve'
+   3. Restart this starter: npm run dev
+   ===============================================================
+   ```
+2. **Is the Model Installed?**  
+   If the weights are missing, it provides the exact copy-paste command:
+   ```text
+   ===============================================================
+   ⚠️  MODEL NOT INSTALLED: gemma4:12b
+   ---------------------------------------------------------------
+   Ollama is running, but 'gemma4:12b' is not downloaded yet.
+   
+   To download this model, run:
+     ollama pull gemma4:12b
+   
+   Once download finishes, restart this starter:
+     npm run dev
+   ===============================================================
+   ```
 
 ---
 
-## Quickstart
+## 🔒 Security & Privacy Commitments
 
-### 1. Running the Hack Day Starter Web App
+1. **Zero External API Keys:** Everything runs 100% locally on your machine. Your prompts, code, and documents never leave your localhost.
+2. **Deterministic & Safe Generation:** The generator uses pure template composition. It does not invoke opaque third-party cloud LLMs to write code.
+3. **No Dynamic Code Evaluation:** `src/tools/calculator.ts` strictly rejects any input containing letters, semicolons, backticks, or non-arithmetic characters. It never touches `eval()` or `new Function()`.
+4. **Registry Enforcement:** The API only generates starters for models registered in `VERIFIED_MODEL_REGISTRY`. Arbitrary, unverified model tags are rejected.
+
+---
+
+## 🚀 Step-by-Step Installation & Quickstart
+
+### Method 1: Using the Web App Profiler (Recommended)
 
 ```bash
-# Clone the repository
+# 1. Clone this repository
 git clone https://github.com/TechGenDM/hack-day-starter.git
 cd hack-day-starter
 
-# Install dependencies
+# 2. Install dependencies
 npm install
 
-# Run the test suite (25 automated unit & integration tests)
-npm test
-
-# Start the application
+# 3. Launch the web profiler
 npm run dev
 
-# Open http://localhost:3000 in your browser
+# 4. Open http://localhost:3000 in your browser
+#    - Review your hardware recommendations
+#    - Select Chat or Agent starter
+#    - Click "Download Starter (.ZIP)"
 ```
 
-### 2. Running a Generated Starter Project
-
-After generating and downloading your starter ZIP:
+### Method 2: Running Your Downloaded Starter Project
 
 ```bash
-# 1. Unzip the project
-unzip hack-day-starter-agent-gemma4.zip -d hack-day-starter-agent-gemma4
-cd hack-day-starter-agent-gemma4
+# 1. Unzip your generated project
+unzip hack-day-starter-agent-gemma4.zip -d my-ai-agent
+cd my-ai-agent
 
-# 2. Ensure Ollama is running and download the model
+# 2. Pull the model weights locally
 ollama pull gemma4:12b
 
-# 3. Install project dev dependencies
+# 3. Install dev dependencies (TypeScript & tsx)
 npm install
 
-# 4. Start the agent CLI
+# 4. Start your local AI!
 npm run dev
 ```
 
 ---
 
-## Project Structure
+## 🧪 Comprehensive Automated Test Suite (33/33 Passing)
 
+The codebase includes an extensive automated test suite covering recommendation logic, live data syncing, generator determinism, AST security auditing, and runtime readiness diagnostics:
+
+```bash
+npm test
 ```
+
+```text
+✔ R1: Both starter types ship the readiness module and use it in index.ts
+✔ R2 (chat): Ollama unavailable → friendly message, download URL, no raw error
+✔ R2 (agent): Ollama unavailable → friendly message, download URL, no raw error
+✔ R3 (chat): model missing → exact 'ollama pull qwen3.5:9b', no substitution
+✔ R3 (agent): model missing → exact 'ollama pull gemma4:12b', no substitution
+✔ R4: Chat — ready → readiness message, then unchanged chat behavior with exact tag
+✔ R5: Agent — ready → unchanged model → calculator tool → result → model loop
+✔ R6: readiness module matches exact tags only (':latest' normalization for bare names)
+✔ A: Gemma 4 E4B metadata matches verified source snapshot
+✔ B: Gemma 4 12B metadata matches verified source snapshot
+✔ C: Qwen 3.5 4B metadata matches verified source snapshot
+✔ D: Qwen 3.5 9B metadata matches verified source snapshot
+✔ E: GPT-OSS 20B metadata matches verified source snapshot
+✔ F: Capability fields match source snapshot
+✔ G: Ollama display sizes and short digests match source snapshot
+✔ H: Current model discovery finds newly added model families including Qwen 3.8
+✔ I: Retired / unavailable models are never recommended
+✔ J: Stale metadata cannot be presented as 'current' or recommended
+✔ K: 24 GB Apple Silicon recommends only models that pass current hardware policy
+✔ L: 8 GB CPU-only does not receive artificially inflated model-capacity bonuses
+✔ M: Tool-calling selection depends on verified capability data
+✔ N: Discrepancy detector flags discrepancies when curated registry disagrees with observations
+✔ A: Chat starter generation produces standard file set
+✔ B: Agent starter generation produces tool-calling file set
+✔ C: Exact selected Ollama tag is injected into config, code, and README
+✔ D: README contains exact setup commands in sequence
+✔ E: Agent generation rejects a no-tools model with exact error message
+✔ F: Generated file paths are valid relative paths and JSON files parse cleanly
+✔ G: Generated project is 100% deterministic across multiple runs
+✔ H: Retired, unverified, or arbitrary models cannot bypass safety gates
+✔ I: Generated templates do not access invalid readline.clearLine or cursorTo
+✔ J: Calculator tool security audit — zero eval, zero Function, strict validation, correct arithmetic
+✔ K: Starter API route enforces strict model safety and capability verification
+
+ℹ tests 33
+ℹ suites 0
+ℹ pass 33
+ℹ fail 0
+```
+
+---
+
+## ❓ Frequently Asked Questions (FAQ)
+
+### Q1: Can I run an AI model locally without a dedicated GPU?
+**Yes.** Modern open-weight small language models (such as `phi4-mini` at 2.5 GB or `qwen3.5:4b` at 3.4 GB) run efficiently on standard modern x86/ARM CPUs using Ollama's SIMD and AVX-512 optimizations. On Apple Silicon (M1/M2/M3/M4), the CPU and GPU share high-bandwidth Unified Memory, giving desktop-grade performance on thin laptops.
+
+### Q2: How much RAM do I need for local AI?
+* **Minimum:** 8 GB RAM allows comfortable execution of 2B–4B parameter models.
+* **Sweet Spot:** 16 GB RAM runs 7B–12B models (e.g., `gemma4:12b` or `qwen3.5:9b`) at full speed with generous context windows.
+* **Power User:** 32 GB–64 GB RAM unlocks 27B–35B parameter reasoning models and coding specialists.
+
+### Q3: Why run models locally instead of using cloud APIs like OpenAI or Anthropic?
+1. **100% Privacy & Compliance:** No data or confidential code ever leaves your device.
+2. **Zero Cost:** No subscriptions, no per-token billing, and no credit card requirements.
+3. **Offline Resilience:** Works completely disconnected from the internet (airplanes, remote sites, secure networks).
+4. **Zero Rate Limits:** Unlimited queries and full control over system prompts and context.
+
+### Q4: What is the difference between Ollama and Hack Day Starter?
+* **Ollama** is the runtime engine (analogous to the Node.js runtime or Docker daemon) that manages model execution.
+* **Hack Day Starter** is the developer bootstrapper that profiles your machine, recommends the best model for your exact hardware, and scaffolds a complete TypeScript application with zero runtime dependencies.
+
+### Q5: How does tool-calling work without an internet connection?
+The open-weight model is trained to recognize when a query requires a tool. It outputs a structured JSON object specifying the tool name and arguments. Your local TypeScript runtime executes the function on your machine (e.g., querying a local database or running a math parser) and returns the output to the model to generate the final response.
+
+---
+
+## 📁 Repository Structure
+
+```text
 ├── app/
 │   ├── api/recommend/route.ts      # Hardware scoring & model recommendation API
 │   ├── api/starter/route.ts        # Starter generation & model safety gating API
-│   ├── globals.css                 # Dark theme & select styling
+│   ├── globals.css                 # Dark theme & UI layout styling
 │   ├── layout.tsx                  # Root layout & SEO metadata
 │   └── page.tsx                    # Hardware profiler, model picker & ZIP downloader
 ├── lib/
@@ -257,22 +415,18 @@ npm run dev
 
 ---
 
-## Automated Test Suite
+## 🤝 Contributing
 
-Run all 33 unit, integration, and security tests:
+Contributions to improve hardware profiling heuristics, expand verified model registry snapshots, or add new starter templates are welcome!
 
-```bash
-npm test
-```
-
-### Test Coverage Highlights:
-- **Recommendation Scenarios (A–N):** Apple Silicon 24GB, CPU-only 8GB, disk space headroom enforcement, legacy/retired model exclusion, tool-calling filtering, and live observation discrepancy detection.
-- **Starter Generation & Security (A–K):** Exact model tag injection, valid relative file structures, determinism, agent no-tools gating, readline API safety (no invalid `clearLine`/`cursorTo` calls), static AST security audit (zero `eval`/`Function`), dynamic arithmetic correctness, and API endpoint safety gating.
-- **Ollama & Model Readiness (R1–R6):** Friendly actionable diagnostics when Ollama daemon is unreachable, exact model tag check with `ollama pull <model>` instructions, readiness confirmation, and unchanged chat & agent execution loop.
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/model-sync`
+3. Ensure all tests pass: `npm test`
+4. Submit a Pull Request
 
 ---
 
-## License
+## 📄 License
 
-[MIT](LICENSE) © 2026 Hack Day Starter Contributors
-
+Distributed under the **MIT License**. See [`LICENSE`](LICENSE) for details.  
+Built with ❤️ for **Hacktoberfest 2026 — Weekend Challenge: Build for a Friend**.
