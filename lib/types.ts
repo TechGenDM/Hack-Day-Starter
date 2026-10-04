@@ -89,6 +89,17 @@ export type VerificationStatus =
   | "metadata-stale";
 
 /**
+ * Runtime execution verification state:
+ * - "runtime-verified": actively tested and confirmed through local chat and tool-calling execution
+ * - "runtime-pending": source/capability verified against primary documentation, but pending local runtime execution
+ * - "runtime-ineligible": retired or not candidate for runtime testing
+ */
+export type RuntimeVerificationStatus =
+  | "runtime-verified"
+  | "runtime-pending"
+  | "runtime-ineligible";
+
+/**
  * Model lifecycle in the active Ollama ecosystem:
  * - "current": active, primary recommendation candidate
  * - "legacy": older model generation superseded by a newer family (e.g. Gemma 3)
@@ -216,6 +227,14 @@ export interface ModelEntry {
 
   /** Verification status of this record */
   verificationStatus: VerificationStatus;
+
+  /**
+   * Runtime verification status:
+   * - "runtime-verified": confirmed working in live Chat + Tool-calling Agent execution
+   * - "runtime-pending": source/capability verified from authoritative documentation, pending runtime test
+   * - "runtime-ineligible": retired or not candidate for runtime testing
+   */
+  runtimeVerification?: RuntimeVerificationStatus;
 
   /** ISO 8601 timestamp when this entry was verified */
   verifiedAt: string;

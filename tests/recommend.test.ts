@@ -392,3 +392,40 @@ test("N: Discrepancy detector flags discrepancies when curated registry disagree
   assert.ok(digestDiffs.length > 0, "Must detect digest discrepancy");
   assert.match(digestDiffs[0], /display digest discrepancy/i);
 });
+
+// ---------------------------------------------------------------------------
+// Test O: Runtime Verified vs Source Verified / Runtime Pending Distinction
+// ---------------------------------------------------------------------------
+
+test("O: Runtime verified models and runtime pending models are strictly distinguished", () => {
+  // 1. Runtime verified models (actually tested live through Chat + Tool-calling Agent)
+  const llama32 = VERIFIED_MODEL_REGISTRY.find((m) => m.ollamaTag === "llama3.2:3b");
+  assert.ok(llama32, "llama3.2:3b must exist in registry");
+  assert.strictEqual(llama32.verificationStatus, "verified");
+  assert.strictEqual(llama32.runtimeVerification, "runtime-verified");
+
+  const llama31 = VERIFIED_MODEL_REGISTRY.find((m) => m.ollamaTag === "llama3.1:8b");
+  assert.ok(llama31, "llama3.1:8b must exist in registry");
+  assert.strictEqual(llama31.verificationStatus, "verified");
+  assert.strictEqual(llama31.runtimeVerification, "runtime-verified");
+
+  // 2. Source verified, runtime verification pending models (NOT marked runtime verified)
+  const pendingTags = [
+    "qwen2.5-coder:7b",
+    "mistral-nemo:12b",
+    "lfm2.5:8b",
+    "devstral-small-2:latest",
+  ];
+
+  for (const tag of pendingTags) {
+    const model = VERIFIED_MODEL_REGISTRY.find((m) => m.ollamaTag === tag);
+    assert.ok(model, `${tag} must exist in registry`);
+    assert.strictEqual(model.verificationStatus, "verified", `${tag} must be source-verified`);
+    assert.strictEqual(
+      model.runtimeVerification,
+      "runtime-pending",
+      `${tag} must be marked runtime-pending, NOT runtime-verified`
+    );
+  }
+});
+

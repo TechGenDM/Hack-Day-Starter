@@ -20,9 +20,9 @@ import { ModelEntry, RegistryMetadata } from "./types";
 export const VERIFIED_MODEL_REGISTRY: ModelEntry[] = CURATED_MODEL_DEFINITIONS;
 
 export const REGISTRY_METADATA: RegistryMetadata = {
-  registryVersion: "2026.10.02.3",
-  lastVerifiedAt: "2026-10-02T13:00:00.000Z",
-  verifiedDisplayDate: "October 2, 2026 13:00 UTC",
+  registryVersion: "2026.10.04.1",
+  lastVerifiedAt: "2026-10-04T13:00:00.000Z",
+  verifiedDisplayDate: "October 4, 2026 13:00 UTC",
   sourceLibraryUrl: "https://ollama.com/library",
   observationSource: "regression-fixture",
   totalModels: VERIFIED_MODEL_REGISTRY.length,

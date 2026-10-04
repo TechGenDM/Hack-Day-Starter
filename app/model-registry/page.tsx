@@ -26,7 +26,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Verified Ollama Model Registry — Hardware Specs & Benchmarks",
     description:
-      "Precise source-observed data, vendor-published guidance, and empirical sizing heuristics for 17 tracked open-weight models.",
+      "Precise source-observed data, vendor-published guidance, and empirical sizing heuristics for tracked open-weight models.",
     url: "/model-registry",
   },
 };
@@ -180,6 +180,16 @@ export default function ModelRegistryPage() {
                       <span className="text-[11px] px-2 py-0.5 rounded bg-emerald-950/50 text-emerald-300 border border-emerald-800/40 font-semibold">
                         Current
                       </span>
+                      {model.runtimeVerification === "runtime-verified" && (
+                        <span className="text-[11px] px-2 py-0.5 rounded bg-emerald-950/70 text-emerald-300 border border-emerald-600/50 font-semibold">
+                          ✓ Runtime Verified
+                        </span>
+                      )}
+                      {model.runtimeVerification === "runtime-pending" && (
+                        <span className="text-[11px] px-2 py-0.5 rounded bg-amber-950/40 text-amber-300 border border-amber-800/40 font-semibold">
+                          ⏳ Runtime Pending
+                        </span>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-2 mt-1.5">
