@@ -24,7 +24,7 @@ export type OperatingSystem = "macos" | "linux" | "windows";
 
 export type GpuType = "apple-silicon" | "nvidia" | "none";
 
-export type AppleSiliconGeneration = "m1" | "m2" | "m3" | "m4";
+export type AppleSiliconGeneration = "m1" | "m2" | "m3" | "m4" | "m5" | "m6";
 
 export type UseCase = "code" | "chat" | "summarization" | "general";
 
