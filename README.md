@@ -1,6 +1,6 @@
 # 🚀 Hack Day Starter — Run Local AI Models on Any Laptop or PC
 
-[![Tests](https://img.shields.io/badge/tests-33%2F33%20passing-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-36%2F36%20passing-brightgreen.svg)](tests/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-18%2B%20(Native%20Fetch)-success.svg)](https://nodejs.org/)
 [![Ollama](https://img.shields.io/badge/Ollama-Local%20Inference-black.svg)](https://ollama.com)
@@ -8,13 +8,13 @@
 [![Hacktoberfest 2026](https://img.shields.io/badge/Hacktoberfest-2026%20Weekend%20Challenge-orange.svg)](https://github.com/TechGenDM/hack-day-starter)
 
 > **Hardware-aware local model recommender and zero-dependency TypeScript starters for Ollama.**  
-> **Hack Day Starter** profiles your hardware (RAM, GPU, CPU, SSD headroom), matches your machine with a verified open-weight AI model that runs smoothly without crashing, and generates an immediate, production-ready TypeScript project with **zero runtime dependencies**.
+> Built for the **Hacktoberfest 2026 "Build for a Friend" Weekend Challenge**, **Hack Day Starter** profiles your hardware (RAM, GPU, CPU, SSD headroom), matches your machine with a verified open-weight AI model fitted to your system memory and compute limits, and generates an immediate, production-ready TypeScript project with **zero runtime dependencies**.
 
 ---
 
 ## 📚 Technical Documentation & Guides
 
-- 📖 **[Verified Model Registry](https://hack-day-starter.vercel.app/model-registry):** All 17 tracked entries with exact manifest byte sizes, context token windows, lifecycle states, and verified capabilities.
+- 📖 **[Verified Model Registry](https://hack-day-starter.vercel.app/model-registry):** All 23 tracked entries with exact manifest byte sizes, context token windows, lifecycle states, and verified capabilities.
 - ⚡ **[Ollama Hardware Requirements Guide](https://hack-day-starter.vercel.app/ollama-hardware-guide):** In-depth engineering analysis of Apple Silicon Metal, NVIDIA CUDA VRAM, CPU bottlenecks, and KV cache calculations.
 - 🛠️ **[Building Local Tool-Calling Agents](https://hack-day-starter.vercel.app/ollama-tool-calling):** Native Ollama tool calling, multi-step agent loops, AST arithmetic security, and verified models.
 - ⚙️ **[Deterministic Sizing Logic](https://hack-day-starter.vercel.app/how-it-works):** Mathematical scoring breakdown, binary safety gates, and 1.5 GB buffer policy.
@@ -46,9 +46,9 @@ If you are asking *"How do I run an open-source AI model locally on my computer?
 
 ---
 
-## 🎯 The "Build for a Friend" Problem
+## 🎯 The "Build for a Friend" Challenge (Hacktoberfest 2026)
 
-During hackathons, weekend sprints, and local AI prototyping, developers lose the first 2–4 hours fighting common pitfalls:
+Hack Day Starter was built specifically for the **Hacktoberfest 2026 "Build for a Friend" Weekend Challenge**. During hackathons, weekend sprints, and local AI prototyping, developers lose the first 2–4 hours fighting common pitfalls:
 
 * 💥 **Out-of-Memory (OOM) Crashes:** Downloading a 14 GB or 20 GB model on an 8 GB or 16 GB laptop triggers aggressive swap thrashing, freezing the machine or crawling at 0.2 tokens/second.
 * 📦 **Stale Model Catalogs:** Outdated tutorials recommend retired 2023-era models (like Llama 2 7B) instead of modern state-of-the-art architectures (Gemma 4, Qwen 3.5, Phi-4) that offer 256K context and native tool calling.
@@ -75,7 +75,7 @@ Memory calculations must account for the **model weights**, the **KV cache** (wh
 | **64 GB+ Unified / VRAM** (Workstation) | **Qwen 3 Coder Next**<br>**Qwen 3.6 35B** | `qwen3-coder-next`<br>`qwen3.6:35b` | 52 GB<br>23 GB | 256K<br>256K | ✅<br>✅ | 🏆 Full frontier-grade local intelligence |
 
 > [!NOTE]
-> **Unified Memory (Apple Silicon M1/M2/M3/M4):** macOS dynamically shares RAM between CPU and GPU. A 16 GB Mac can dedicate ~12 GB directly to model weights and KV cache, making it one of the most efficient local AI platforms available.
+> **Unified Memory (Apple Silicon M1–M6):** macOS dynamically shares RAM between CPU and GPU. A 16 GB Mac can dedicate ~12 GB directly to model weights and KV cache, making it one of the most efficient local AI platforms available.
 
 ---
 
@@ -204,22 +204,26 @@ Agent: 342 multiplied by 19, divided by 4, equals 1624.5.
 
 ## 🔍 Verified Model Registry (Live Ollama Source Snapshot)
 
-Unlike static blog posts that become outdated within weeks, Hack Day Starter uses a **Verified Model Registry** synchronized with official Ollama library observations:
+Unlike static blog posts that become outdated within weeks, Hack Day Starter uses a **Verified Model Registry** tracking 23 model entries categorized by capability verification, runtime testing status, and lifecycle. The complete catalog with manifest byte sizes and interactive filters is browsable on the [Verified Model Registry](https://hack-day-starter.vercel.app/model-registry) page:
 
-| Model | Creator | Ollama Tag | Display Size | Context | Tools | Memory Guidance |
+| Model | Creator | Ollama Tag | Display Size | Context | Tools | Verification Status |
 | :--- | :--- | :--- | :---: | :---: | :---: | :--- |
-| **Gemma 4 12B** | Google | `gemma4:12b` | 7.7 GB | 256K | ✅ | Official: 16 GB |
-| **Gemma 4 E4B** | Google | `gemma4:e4b` | 6.6 GB | 128K | ✅ | Official: 8 GB |
-| **Qwen 3.5 9B** | Alibaba | `qwen3.5:9b` | 6.6 GB | 256K | ✅ | Estimated: ~10 GB |
-| **Qwen 3.5 4B** | Alibaba | `qwen3.5:4b` | 3.4 GB | 256K | ✅ | Estimated: ~5.5 GB |
-| **Qwen 3.8 27B** | Alibaba | `qwen3.8:27b` | 18 GB | 256K | ✅ | Estimated: ~26 GB |
-| **Qwen 3.6 27B** | Alibaba | `qwen3.6:27b` | 18 GB | 256K | ✅ | Estimated: ~26 GB |
-| **Qwen 3.6 35B** | Alibaba | `qwen3.6:35b` | 23 GB | 256K | ✅ | Estimated: ~32 GB |
-| **GPT-OSS 20B** | Community | `gpt-oss:20b` | 14 GB | 128K | ✅ | Estimated: ~20 GB |
-| **Phi-4 Mini** | Microsoft | `phi4-mini` | 2.5 GB | 128K | ✅ | Estimated: ~4 GB |
-| **Nemotron 3 Nano 4B** | NVIDIA | `nemotron-3-nano:4b` | 2.8 GB | 256K | ✅ | Estimated: ~4.5 GB |
-| **Qwen 3 Coder Next** | Alibaba | `qwen3-coder-next:latest` | 52 GB | 256K | ✅ | Estimated: ~64 GB |
-| **DeepSeek R1 1.5B** | DeepSeek | `deepseek-r1:1.5b` | 1.1 GB | 128K | ❌ | Estimated: ~2.5 GB |
+| **Gemma 4 12B** | Google | `gemma4:12b` | 7.7 GB | 256K | ✅ | Official Spec: 16 GB |
+| **Gemma 4 E4B** | Google | `gemma4:e4b` | 6.6 GB | 128K | ✅ | Official Spec: 8 GB |
+| **Llama 3.2 3B** | Meta | `llama3.2:3b` | 2.0 GB | 128K | ✅ | Runtime Verified |
+| **Llama 3.1 8B** | Meta | `llama3.1:8b` | 4.9 GB | 128K | ✅ | Runtime Verified |
+| **Qwen 3.5 9B** | Alibaba | `qwen3.5:9b` | 6.6 GB | 256K | ✅ | Source Verified |
+| **Qwen 3.5 4B** | Alibaba | `qwen3.5:4b` | 3.4 GB | 256K | ✅ | Source Verified |
+| **Qwen 2.5 Coder 7B** | Alibaba | `qwen2.5-coder:7b` | 4.7 GB | 32K | ✅ | Source Verified |
+| **Mistral NeMo 12B** | Mistral | `mistral-nemo:12b` | 7.1 GB | 128K | ✅ | Source Verified |
+| **Qwen 3.8 27B** | Alibaba | `qwen3.8:27b` | 18 GB | 256K | ✅ | Source Verified |
+| **Qwen 3.6 35B** | Alibaba | `qwen3.6:35b` | 23 GB | 256K | ✅ | Source Verified |
+| **GPT-OSS 20B** | Community | `gpt-oss:20b` | 14 GB | 128K | ✅ | Source Verified |
+| **Phi-4 Mini** | Microsoft | `phi4-mini` | 2.5 GB | 128K | ✅ | Source Verified |
+| **Nemotron 3 Nano 4B** | NVIDIA | `nemotron-3-nano:4b` | 2.8 GB | 256K | ✅ | Source Verified |
+| **LFM 2.5 8B** | Liquid | `lfm2.5:8b` | 5.2 GB | 32K | ❌ | Source Verified |
+| **Devstral Small 2** | Mistral | `devstral-small-2:latest` | 15 GB | 32K | ✅ | Source Verified |
+| **DeepSeek R1 1.5B** | DeepSeek | `deepseek-r1:1.5b` | 1.1 GB | 128K | ❌ | Source Verified |
 
 ---
 
@@ -265,7 +269,7 @@ Generated projects ship with an integrated **Readiness Check** (`src/readiness.t
 
 ## 🔒 Security & Privacy Commitments
 
-1. **Zero External API Keys:** Everything runs 100% locally on your machine. Your prompts, code, and documents never leave your localhost.
+1. **No External API Keys:** Inference executes locally through your local Ollama instance. Prompts, code, and documents are processed on your machine rather than sent to third-party cloud APIs.
 2. **Deterministic & Safe Generation:** The generator uses pure template composition. It does not invoke opaque third-party cloud LLMs to write code.
 3. **No Dynamic Code Evaluation:** `src/tools/calculator.ts` strictly rejects any input containing letters, semicolons, backticks, or non-arithmetic characters. It never touches `eval()` or `new Function()`.
 4. **Registry Enforcement:** The API only generates starters for models registered in `VERIFIED_MODEL_REGISTRY`. Arbitrary, unverified model tags are rejected.
@@ -312,9 +316,9 @@ npm run dev
 
 ---
 
-## 🧪 Comprehensive Automated Test Suite (33/33 Passing)
+## 🧪 Comprehensive Automated Test Suite (36/36 Passing)
 
-The codebase includes an extensive automated test suite covering recommendation logic, live data syncing, generator determinism, AST security auditing, and runtime readiness diagnostics:
+The codebase includes an extensive automated test suite covering recommendation logic, live data syncing, generator determinism, AST security auditing, runtime readiness diagnostics, score transparency, and starter setup flow contracts:
 
 ```bash
 npm test
@@ -343,6 +347,8 @@ npm test
 ✔ L: 8 GB CPU-only does not receive artificially inflated model-capacity bonuses
 ✔ M: Tool-calling selection depends on verified capability data
 ✔ N: Discrepancy detector flags discrepancies when curated registry disagrees with observations
+✔ O: Runtime verified models and runtime pending models are strictly distinguished
+✔ P: Recommendation transparency and score factor accuracy
 ✔ A: Chat starter generation produces standard file set
 ✔ B: Agent starter generation produces tool-calling file set
 ✔ C: Exact selected Ollama tag is injected into config, code, and README
@@ -354,10 +360,11 @@ npm test
 ✔ I: Generated templates do not access invalid readline.clearLine or cursorTo
 ✔ J: Calculator tool security audit — zero eval, zero Function, strict validation, correct arithmetic
 ✔ K: Starter API route enforces strict model safety and capability verification
+✔ L: Starter Workbench setup flow prerequisites and command contract
 
-ℹ tests 33
+ℹ tests 36
 ℹ suites 0
-ℹ pass 33
+ℹ pass 36
 ℹ fail 0
 ```
 
@@ -366,7 +373,7 @@ npm test
 ## ❓ Frequently Asked Questions (FAQ)
 
 ### Q1: Can I run an AI model locally without a dedicated GPU?
-**Yes.** Modern open-weight small language models (such as `phi4-mini` at 2.5 GB or `qwen3.5:4b` at 3.4 GB) run efficiently on standard modern x86/ARM CPUs using Ollama's SIMD and AVX-512 optimizations. On Apple Silicon (M1/M2/M3/M4), the CPU and GPU share high-bandwidth Unified Memory, giving desktop-grade performance on thin laptops.
+**Yes.** Modern open-weight small language models (such as `phi4-mini` at 2.5 GB or `qwen3.5:4b` at 3.4 GB) run efficiently on standard modern x86/ARM CPUs using Ollama's SIMD and AVX-512 optimizations. On Apple Silicon (M1–M6), the CPU and GPU share high-bandwidth Unified Memory, giving desktop-grade performance on thin laptops.
 
 ### Q2: How much RAM do I need for local AI?
 * **Minimum:** 8 GB RAM allows comfortable execution of 2B–4B parameter models.
@@ -374,10 +381,10 @@ npm test
 * **Power User:** 32 GB–64 GB RAM unlocks 27B–35B parameter reasoning models and coding specialists.
 
 ### Q3: Why run models locally instead of using cloud APIs like OpenAI or Anthropic?
-1. **100% Privacy & Compliance:** No data or confidential code ever leaves your device.
-2. **Zero Cost:** No subscriptions, no per-token billing, and no credit card requirements.
-3. **Offline Resilience:** Works completely disconnected from the internet (airplanes, remote sites, secure networks).
-4. **Zero Rate Limits:** Unlimited queries and full control over system prompts and context.
+1. **Local Privacy & Data Control:** Prompts, code, and documents run directly on your machine instead of being transmitted to third-party cloud servers.
+2. **Zero Incurred Usage Fees:** No subscription tiers, no per-token billing, and no credit card required.
+3. **Offline Resilience:** Functions completely disconnected from external networks (airplanes, field work, secure offline environments).
+4. **No Cloud Rate Limits:** Requests are bound only by your local hardware capabilities, without artificial vendor request caps or token-per-minute throttling.
 
 ### Q4: What is the difference between Ollama and Hack Day Starter?
 * **Ollama** is the runtime engine (analogous to the Node.js runtime or Docker daemon) that manages model execution.
@@ -414,8 +421,8 @@ The open-weight model is trained to recognize when a query requires a tool. It o
 ├── scripts/
 │   └── sync-model-registry.ts      # Automated registry discovery & discrepancy checker
 ├── tests/
-│   ├── recommend.test.ts           # Tests A–N: 14 recommendation & registry tests
-│   ├── starter.test.ts             # Tests A–K: 11 starter generation & security tests
+│   ├── recommend.test.ts           # Tests A–P: 16 recommendation, transparency & registry tests
+│   ├── starter.test.ts             # Tests A–L: 12 starter generation, security & setup flow tests
 │   └── readiness.test.ts           # Tests R1–R6: 8 readiness & runtime integration tests
 ├── package.json
 ├── LICENSE                         # MIT License
