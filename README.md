@@ -7,8 +7,17 @@
 [![License](https://img.shields.io/badge/license-MIT-purple.svg)](LICENSE)
 [![Hacktoberfest 2026](https://img.shields.io/badge/Hacktoberfest-2026%20Weekend%20Challenge-orange.svg)](https://github.com/TechGenDM/hack-day-starter)
 
-> **The definitive answer to: *"How can I run a local AI model on my device?"***  
+> **Hardware-aware local model recommender and zero-dependency TypeScript starters for Ollama.**  
 > **Hack Day Starter** profiles your hardware (RAM, GPU, CPU, SSD headroom), matches your machine with a verified open-weight AI model that runs smoothly without crashing, and generates an immediate, production-ready TypeScript project with **zero runtime dependencies**.
+
+---
+
+## 📚 Technical Documentation & Guides
+
+- 📖 **[Verified Model Registry](https://hack-day-starter.vercel.app/model-registry):** All 17 tracked entries with exact manifest byte sizes, context token windows, lifecycle states, and verified capabilities.
+- ⚡ **[Ollama Hardware Requirements Guide](https://hack-day-starter.vercel.app/ollama-hardware-guide):** In-depth engineering analysis of Apple Silicon Metal, NVIDIA CUDA VRAM, CPU bottlenecks, and KV cache calculations.
+- 🛠️ **[Building Local Tool-Calling Agents](https://hack-day-starter.vercel.app/ollama-tool-calling):** Native Ollama tool calling, multi-step agent loops, AST arithmetic security, and verified models.
+- ⚙️ **[Deterministic Sizing Logic](https://hack-day-starter.vercel.app/how-it-works):** Mathematical scoring breakdown, binary safety gates, and 1.5 GB buffer policy.
 
 ---
 
