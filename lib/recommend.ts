@@ -212,7 +212,7 @@ export function buildExplanation(
   // Free disk space context
   const diskRemaining = profile.freeDiskSpaceGb - artifactSizeGb;
   parts.push(
-    `leaves ~${diskRemaining.toFixed(0)} GB free disk space (after recommended ${RECOMMENDED_DISK_BUFFER_GB} GB safety buffer)`
+    `leaves ~${diskRemaining.toFixed(0)} GB free disk space (preserving the recommended ${RECOMMENDED_DISK_BUFFER_GB} GB safety buffer)`
   );
 
   // Use case & capability context

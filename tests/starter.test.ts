@@ -480,6 +480,30 @@ test("K: Starter API route enforces strict model safety and capability verificat
   assert.strictEqual(data4.success, true);
   assert.strictEqual(data4.result.modelTag, "gemma4:12b");
   assert.strictEqual(data4.result.starterType, "agent");
-  assert.ok(data4.result.files.some((f: any) => f.path === "src/tools/calculator.ts"));
+  assert.ok(data4.result.files.some((f: { path: string }) => f.path === "src/tools/calculator.ts"));
+});
+
+// ---------------------------------------------------------------------------
+// Test L: Starter Workbench setup flow prerequisites and command contract
+// ---------------------------------------------------------------------------
+
+test("L: Starter Workbench setup flow prerequisites and command contract", () => {
+  const chatProj = generateStarterProject({ model: gemmaModel, starterType: "chat" });
+  assert.strictEqual(chatProj.modelTag, "gemma4:e4b");
+  assert.strictEqual(`${chatProj.projectName}.zip`, `${chatProj.projectName}.zip`);
+  assert.ok(chatProj.projectName.startsWith("hack-day-starter-chat-"));
+
+  const agentProj = generateStarterProject({ model: qwenModel, starterType: "agent" });
+  assert.strictEqual(agentProj.modelTag, "qwen3.5:9b");
+  assert.strictEqual(`${agentProj.projectName}.zip`, `${agentProj.projectName}.zip`);
+  assert.ok(agentProj.projectName.startsWith("hack-day-starter-agent-"));
+
+  // Verify file listing contains essential entrypoints without bloated dependencies
+  const filePaths = agentProj.files.map((f) => f.path);
+  assert.ok(filePaths.includes("package.json"));
+  assert.ok(filePaths.includes("README.md"));
+  assert.ok(filePaths.includes("src/index.ts"));
+  assert.ok(filePaths.includes("src/ollama.ts"));
+  assert.ok(filePaths.includes("src/tools/calculator.ts"));
 });
 

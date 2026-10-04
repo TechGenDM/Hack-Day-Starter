@@ -35,6 +35,7 @@ import {
 } from "../lib/sources/ollama";
 import { validateModelRegistry } from "../lib/registry-validator";
 import { HardwareProfile, RawOllamaObservation } from "../lib/types";
+import { getScoreBreakdown, getWhyReasons } from "../lib/recommendation-insights";
 
 // ---------------------------------------------------------------------------
 // Tests A–E: Exact Metadata Matching Against Verified Source Snapshot
@@ -426,6 +427,76 @@ test("O: Runtime verified models and runtime pending models are strictly disting
       "runtime-pending",
       `${tag} must be marked runtime-pending, NOT runtime-verified`
     );
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Test P: Recommendation Transparency & Copy Accuracy (Phase 10D)
+// ---------------------------------------------------------------------------
+
+test("P: Recommendation transparency and score factor accuracy", () => {
+  const profile: HardwareProfile = {
+    ramGb: 16,
+    freeDiskSpaceGb: 40,
+    gpuType: "apple-silicon",
+    appleSiliconGeneration: "m3",
+    gpuVramGb: null,
+    os: "macos",
+    useCase: "code",
+  };
+
+  const recs = recommendModels(profile);
+  assert.ok(recs.length > 0, "Should produce recommendations");
+
+  // 1. Disk space explanation accurately describes calculation and preserves safety buffer
+  for (const rec of recs) {
+    const artifactGb = getModelApproxSizeGb(rec.model);
+    const remainingGb = profile.freeDiskSpaceGb - artifactGb;
+    const expectedDiskPattern = new RegExp(
+      `leaves ~${remainingGb.toFixed(0)} GB free disk space \\(preserving the recommended 1\\.5 GB safety buffer\\)`
+    );
+    assert.match(
+      rec.explanation,
+      expectedDiskPattern,
+      `Disk explanation for ${rec.model.displayName} must match calculation`
+    );
+  }
+
+  // 2. Score factor breakdown mathematically matches scoreModel
+  const [top, ...alts] = recs;
+  const breakdown = getScoreBreakdown(top.model, profile);
+  const engineScore = scoreModel(top.model, profile);
+  assert.strictEqual(
+    breakdown.totalScore,
+    Math.round(engineScore * 10) / 10,
+    "Score breakdown sum must match engine scoreModel output"
+  );
+
+  // Check individual factors are accurately credited
+  const useCaseFactor = breakdown.factors.find((f) => f.id === "use-case");
+  assert.ok(useCaseFactor, "Must have use-case factor");
+  if (top.model.strengths.includes("code")) {
+    assert.strictEqual(useCaseFactor.points, 40);
+    assert.strictEqual(useCaseFactor.awarded, true);
+  }
+
+  const gpuFactor = breakdown.factors.find((f) => f.id === "gpu");
+  assert.ok(gpuFactor, "Must have gpu factor");
+  if (top.model.gpuBenefit) {
+    assert.strictEqual(gpuFactor.points, 30, "Apple Silicon Metal unified memory gets 30 pts");
+  }
+
+  const diskFactor = breakdown.factors.find((f) => f.id === "disk");
+  assert.ok(diskFactor, "Must have disk factor");
+  assert.match(diskFactor.explanation, /1\.5 GB safety buffer/);
+
+  // 3. getWhyReasons produces grounded reasons with points/measurements
+  const whyReasons = getWhyReasons(top, alts, profile);
+  assert.ok(whyReasons.length >= 2 && whyReasons.length <= 3, "Must have 2-3 why reasons");
+  for (const reason of whyReasons) {
+    // Zero generic claims
+    assert.doesNotMatch(reason, /would use most of it/i);
+    assert.doesNotMatch(reason, /facts checked against/i);
   }
 });
 
